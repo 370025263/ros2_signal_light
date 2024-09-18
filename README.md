@@ -71,16 +71,20 @@
 分类器节点订阅 `/perception/traffic_light_recognition/traffic_light_image` 话题，期望接收裁剪好的交通信号灯图像（sensor_msgs/Image类型）。分类结果将发布到 `/perception/traffic_light_recognition/traffic_class` 话题（std_msgs/String类型）。如果启用了绘图功能，带有分类结果的图像将发布到 `/perception/traffic_light_recognition/traffic_light_result_image` 话题。
 
 #### Result Topic Msg Format
-   ```python
+
+```python
         # 发布分类结果
         result_msg = String()
         result_msg.data = f'Predicted: {predicted_label}'
         if true_label:
             result_msg.data += f', True: {true_label}'
         self.result_publisher.publish(result_msg)
-    ```
+```
+
 #### Labels
+
 ![交通信号灯分类示例](sample.png)
+
 
 ```json
 {'warning': 0, 'stop': 1, 'stopLeft': 2, 'go': 3, 'goLeft': 4, 'warningLeft': 5}
