@@ -76,11 +76,15 @@ void ClassificationNode::debugCallback(const traffic_light_msg::msg::TrafficLigh
 
 void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
 {
-  auto start_time = std::chrono::high_resolution_clock::now();
+   auto start_time = std::chrono::high_resolution_clock::now();
+
+  // 将 BGR 转换为 RGB
+  cv::Mat rgb_image;
+  cv::cvtColor(cv_image, rgb_image, cv::COLOR_BGR2RGB);
 
   // 将OpenCV图像转换为Torch张量
   cv::Mat resized_image;
-  cv::resize(cv_image, resized_image, cv::Size(224, 224));
+  cv::resize(rgb_image, resized_image, cv::Size(224, 224));
   cv::Mat float_image;
   resized_image.convertTo(float_image, CV_32FC3, 1.0 / 255);
 
