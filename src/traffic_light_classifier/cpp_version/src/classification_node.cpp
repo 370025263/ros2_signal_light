@@ -82,23 +82,27 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   cv::Mat resized_image;
   cv::resize(cv_image, resized_image, cv::Size(224, 224));
   cv::Mat float_image;
-  resized_image.convertTo(float_image, CV_32F, 1.0 / 255);
-  
-  auto input_tensor = torch::from_blob(float_image.data, {1, 224, 224, 3});
-  input_tensor = input_tensor.permute({0, 3, 1, 2});
-  
+  resized_image.convertTo(float_image, CV_32FC3, 1.0 / 255);
+
+  // 转换为Torch张量
+  torch::Tensor input_tensor = torch::from_blob(float_image.data, {1, 224, 224, 3}, torch::kFloat32);
+  input_tensor = input_tensor.permute({0, 3, 1, 2}); // 调整维度顺序
+
   // 标准化
   input_tensor[0][0] = input_tensor[0][0].sub_(0.485).div_(0.229);
   input_tensor[0][1] = input_tensor[0][1].sub_(0.456).div_(0.224);
   input_tensor[0][2] = input_tensor[0][2].sub_(0.406).div_(0.225);
-  
-  // 进行预测
+
+  // 推理
   torch::NoGradGuard no_grad;
-  auto output = model_.forward({input_tensor}).toTensor();
+  std::vector<torch::jit::IValue> inputs;
+  inputs.push_back(input_tensor);
+
+  auto output = model_.forward(inputs).toTensor();
   auto predicted = output.argmax(1);
-  
+
   std::string predicted_label = idx_to_class_[predicted.item<int>()];
-  
+
   // 更新统计信息
   total_processed_images_++;
   if (!true_label.empty()) {
@@ -142,27 +146,44 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
 
 cv::Mat ClassificationNode::drawResult(const cv::Mat& image, const std::string& label)
 {
-  cv::Mat result_image = image.clone();
+  // 设置标签区域的高度和边距
   int label_height = 40;
   int margin = 10;
-  
-  // 创建一个新的图像，包括原始图像和标签区域
-  cv::Mat output_image(result_image.rows + label_height + margin, result_image.cols, result_image.type(), cv::Scalar(255, 255, 255));
-  
-  // 将原始图像复制到新图像中
-  result_image.copyTo(output_image(cv::Rect(0, label_height + margin, result_image.cols, result_image.rows)));
-  
-  // 在标签区域绘制文本
-  cv::putText(output_image, "Pred: " + label, cv::Point(10, 30), 
-              cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 0), 2);
-  
-  return output_image;
+
+  // 创建结果图像，保持原始图像尺寸，只在顶部添加标签区域
+  int result_height = image.rows + label_height + margin;
+  cv::Mat result_image(result_height, image.cols, image.type(), cv::Scalar(255, 255, 255));
+
+  // 将原始图像复制到结果图像中
+  image.copyTo(result_image(cv::Rect(0, label_height + margin, image.cols, image.rows)));
+
+  // 绘制预测结果
+  std::string text = "Pred: " + label;
+  int font = cv::FONT_HERSHEY_SIMPLEX;
+  double font_scale = 0.7;
+  int thickness = 2;
+  int baseline = 0;
+  cv::Size text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
+
+  // 如果文本宽度超过图像宽度，进一步缩小字体
+  if (text_size.width > image.cols) {
+    font_scale *= static_cast<double>(image.cols) / text_size.width;
+    text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
+  }
+
+  int text_x = (image.cols - text_size.width) / 2;
+  int text_y = (label_height + margin - baseline) / 2 + text_size.height / 2;
+
+  cv::putText(result_image, text, cv::Point(text_x, text_y), font, font_scale, cv::Scalar(0, 0, 0), thickness);
+
+  return result_image;
 }
 
 }  // namespace traffic_light_classifier
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(traffic_light_classifier::ClassificationNode)
+
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
