@@ -80,7 +80,7 @@
         self.result_publisher.publish(result_msg)
     ```
 #### Labels
-![Traffic Light Classification Example](./sample.png)
+![交通信号灯分类示例](sample.png)
 
 ```json
 {'warning': 0, 'stop': 1, 'stopLeft': 2, 'go': 3, 'goLeft': 4, 'warningLeft': 5}
