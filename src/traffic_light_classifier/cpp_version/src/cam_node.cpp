@@ -1,4 +1,5 @@
 #include "traffic_light_classifier/cam_node.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -38,44 +39,51 @@ void CamNode::loadDataset()
   
   RCLCPP_INFO(this->get_logger(), "Starting to load dataset...");
 
-  for (const auto & entry : fs::directory_iterator(annotations_dir_)) {
-    std::string csv_path = entry.path().string() + "/frameAnnotationsBOX.csv";
-    if (fs::exists(csv_path)) {
-      std::ifstream file(csv_path);
-      std::string line;
-      
-      // Skip header
-      std::getline(file, line);
-      
-      while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string token;
-        std::vector<std::string> tokens;
+  for (const auto & entry : fs::recursive_directory_iterator(annotations_dir_)) {
+    if (fs::is_directory(entry)) {
+      std::string csv_path = entry.path().string() + "/frameAnnotationsBOX.csv";
+      if (fs::exists(csv_path)) {
+        std::ifstream file(csv_path);
+        std::string line;
         
-        while (std::getline(iss, token, ';')) {
-          tokens.push_back(token);
-        }
+        // Skip header
+        std::getline(file, line);
         
-        if (tokens.size() >= 7) {
-          std::string img_name = tokens[0].substr(tokens[0].find_last_of('/') + 1);
-          std::string clip_name = tokens[1].substr(tokens[1].find_last_of('/') + 1);
-          std::string img_path = data_dir_ + "/" + clip_name + "/frames/" + img_name;
+        while (std::getline(file, line)) {
+          std::istringstream iss(line);
+          std::string token;
+          std::vector<std::string> tokens;
           
-          if (fs::exists(img_path)) {
-            Annotation ann;
-            ann.img_path = img_path;
-            ann.label = tokens[2];
-            ann.bbox = {
-              std::stoi(tokens[3]),
-              std::stoi(tokens[4]),
-              std::stoi(tokens[5]),
-              std::stoi(tokens[6])
-            };
-            annotations_.push_back(ann);
-            if (class_to_idx_.find(ann.label) == class_to_idx_.end()) {
-              class_to_idx_[ann.label] = class_to_idx_.size();
+          while (std::getline(iss, token, ';')) {
+            tokens.push_back(token);
+          }
+          
+          if (tokens.size() >= 7) {
+            std::string filename = tokens[0]; // 'Filename' column
+            std::string origin_file = tokens[1]; // 'Origin file' column
+            std::string annotation_tag = tokens[2]; // 'Annotation tag' column
+            int ulx = std::stoi(tokens[3]); // 'Upper left corner X'
+            int uly = std::stoi(tokens[4]); // 'Upper left corner Y'
+            int lrx = std::stoi(tokens[5]); // 'Lower right corner X'
+            int lry = std::stoi(tokens[6]); // 'Lower right corner Y'
+
+            std::string img_name = fs::path(filename).filename().string();
+            std::string clip_name = fs::path(origin_file).parent_path().filename().string();
+
+            std::string img_path = data_dir_ + "/" + clip_name + "/frames/" + img_name;
+
+            if (fs::exists(img_path)) {
+              Annotation ann;
+              ann.img_path = img_path;
+              ann.label = annotation_tag;
+              ann.bbox = { ulx, uly, lrx, lry };
+              annotations_.push_back(ann);
+              if (class_to_idx_.find(ann.label) == class_to_idx_.end()) {
+                class_to_idx_[ann.label] = class_to_idx_.size();
+              }
+            } else {
+              RCLCPP_WARN(this->get_logger(), "Image file does not exist: %s", img_path.c_str());
             }
-            RCLCPP_INFO(this->get_logger(), "Added image: %s", img_path.c_str());
           }
         }
       }
@@ -158,6 +166,7 @@ std::string CamNode::getClassesString() const
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(traffic_light_classifier::CamNode)
+
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
