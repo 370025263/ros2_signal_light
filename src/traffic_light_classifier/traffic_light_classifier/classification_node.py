@@ -12,7 +12,7 @@ import os
 import numpy as np
 from traffic_light_msg.msg import TrafficLightMsg
 from ament_index_python.packages import get_package_share_directory
-
+import time
 
 class TrafficLightClassifier(nn.Module):
     def __init__(self, num_classes):
@@ -22,7 +22,6 @@ class TrafficLightClassifier(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-
 
 class ClassificationNode(Node):
     def __init__(self):
@@ -40,20 +39,14 @@ class ClassificationNode(Node):
         self.cv_bridge = CvBridge()
 
         # 初始化模型
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
-        self.class_to_idx = {"warning": 0, "stop": 1,
-                             "stopLeft": 2, "go": 3, "goLeft": 4, "warningLeft": 5}
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.class_to_idx = {"warning": 0, "stop": 1, "stopLeft": 2, "go": 3, "goLeft": 4, "warningLeft": 5}
         self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
         num_classes = len(self.class_to_idx)
         self.model = TrafficLightClassifier(num_classes).to(self.device)
-        package_share_dir = get_package_share_directory(
-            'traffic_light_classifier')
-        model_path = os.path.join(
-            package_share_dir, 'models', 'best_model.pth')
-        self.model.load_state_dict(torch.load(
-            model_path, map_location=self.device))
-        # self.model.load_state_dict(torch.load('/home/casia/jupyter_notebooks/best_model.pth', map_location=self.device))
+        package_share_dir = get_package_share_directory('traffic_light_classifier')
+        model_path = os.path.join(package_share_dir, 'models', 'best_model.pth')
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
 
         self.transform = transforms.Compose([
@@ -64,6 +57,8 @@ class ClassificationNode(Node):
 
         self.total_predictions = 0
         self.correct_predictions = 0
+        self.total_processing_time = 0
+        self.total_processed_images = 0  # New counter for timing
 
         # 发布分类结果
         self.result_publisher = self.create_publisher(
@@ -75,22 +70,22 @@ class ClassificationNode(Node):
         self.declare_parameter('plot_result', True)
 
     def image_callback(self, msg):
+        start_time = time.time()
         cv_image = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
-        self.process_image(cv_image)
+        self.process_image(cv_image, start_time=start_time)
 
     def debug_callback(self, msg):
-        cv_image = self.cv_bridge.imgmsg_to_cv2(
-            msg.image, desired_encoding="rgb8")
+        start_time = time.time()
+        cv_image = self.cv_bridge.imgmsg_to_cv2(msg.image, desired_encoding="rgb8")
         true_label = msg.label
-        self.process_image(cv_image, true_label)
+        self.process_image(cv_image, true_label, start_time=start_time)
 
-    def process_image(self, cv_image, true_label=None):
+    def process_image(self, cv_image, true_label=None, start_time=None):
         self.get_logger().info(f'Input image shape: {cv_image.shape}')
 
         # 预处理图像，保持原始尺寸
         image_tensor = self.transform(cv_image).unsqueeze(0).to(self.device)
-        self.get_logger().info(
-            f'Transformed tensor shape: {image_tensor.shape}')
+        self.get_logger().info(f'Transformed tensor shape: {image_tensor.shape}')
 
         # 进行预测
         with torch.no_grad():
@@ -120,9 +115,19 @@ class ClassificationNode(Node):
         # 如果启用了绘图，则绘制结果并发布
         if self.get_parameter('plot_result').value:
             result_image = self.draw_result(cv_image, predicted_label)
-            result_img_msg = self.cv_bridge.cv2_to_imgmsg(
-                result_image, encoding="rgb8")
+            result_img_msg = self.cv_bridge.cv2_to_imgmsg(result_image, encoding="rgb8")
             self.image_result_publisher.publish(result_img_msg)
+
+        # 计算并记录处理时间
+        if start_time:
+            end_time = time.time()
+            processing_time = end_time - start_time
+            self.total_processing_time += processing_time
+            self.total_processed_images += 1  # Increment processed images count
+            avg_processing_time = self.total_processing_time / self.total_processed_images
+            self.get_logger().info(f'Processing time: {processing_time:.4f} seconds')
+            self.get_logger().info(f'Average processing time: {avg_processing_time:.4f} seconds')
+            self.get_logger().info(f'Total processed images: {self.total_processed_images}')
 
     def draw_result(self, image, label):
         # 设置标签区域的高度和边距
@@ -152,8 +157,7 @@ class ClassificationNode(Node):
         # 如果文本宽度超过图像宽度，进一步缩小字体
         if text_size[0] > width:
             font_scale *= width / text_size[0]
-            text_size = cv2.getTextSize(
-                text, font, font_scale, font_thickness)[0]
+            text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
 
         text_x = (width - text_size[0]) // 2
         text_y = (label_height + margin) // 2 + text_size[1] // 2
@@ -164,14 +168,12 @@ class ClassificationNode(Node):
             f'Original image shape: {image.shape}, Result image shape: {result_image.shape}')
         return result_image
 
-
 def main(args=None):
     rclpy.init(args=args)
     classification_node = ClassificationNode()
     rclpy.spin(classification_node)
     classification_node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
