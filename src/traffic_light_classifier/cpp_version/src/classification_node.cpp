@@ -150,38 +150,40 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
 
 cv::Mat ClassificationNode::drawResult(const cv::Mat& image, const std::string& label)
 {
-  // 设置标签区域的高度和边距
-  int label_height = 40;
-  int margin = 10;
+    // 设置标签区域的高度和边距
+    int label_height = 60; // 增加高度
+    int margin = 10;
 
-  // 创建结果图像，保持原始图像尺寸，只在顶部添加标签区域
-  int result_height = image.rows + label_height + margin;
-  cv::Mat result_image(result_height, image.cols, image.type(), cv::Scalar(255, 255, 255));
+    // 创建结果图像，保持原始图像尺寸，只在顶部添加标签区域
+    int result_height = image.rows + label_height + margin;
+    cv::Mat result_image(result_height, image.cols, image.type(), cv::Scalar(255, 255, 255));
 
-  // 将原始图像复制到结果图像中
-  image.copyTo(result_image(cv::Rect(0, label_height + margin, image.cols, image.rows)));
+    // 将原始图像复制到结果图像中
+    image.copyTo(result_image(cv::Rect(0, label_height + margin, image.cols, image.rows)));
 
-  // 绘制预测结果
-  std::string text = "Pred: " + label;
-  int font = cv::FONT_HERSHEY_SIMPLEX;
-  double font_scale = 0.7;
-  int thickness = 2;
-  int baseline = 0;
-  cv::Size text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
+    // 绘制预测结果
+    std::string text = "Pred: " + label;
+    int font = cv::FONT_HERSHEY_SIMPLEX;
+    double font_scale = 1.5; // 增加字体大小
+    int thickness = 2; // 增加字体厚度
+    int baseline = 0;
+    cv::Size text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
 
-  // 如果文本宽度超过图像宽度，进一步缩小字体
-  if (text_size.width > image.cols) {
-    font_scale *= static_cast<double>(image.cols) / text_size.width;
-    text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
-  }
+    // 如果文本宽度超过图像宽度，进一步缩小字体
+    if (text_size.width > image.cols) {
+        font_scale *= static_cast<double>(image.cols) / text_size.width;
+        text_size = cv::getTextSize(text, font, font_scale, thickness, &baseline);
+    }
 
-  int text_x = (image.cols - text_size.width) / 2;
-  int text_y = (label_height + margin - baseline) / 2 + text_size.height / 2;
+    int text_x = (image.cols - text_size.width) / 2;
+    int text_y = (label_height + margin - baseline) / 2 + text_size.height / 2;
 
-  cv::putText(result_image, text, cv::Point(text_x, text_y), font, font_scale, cv::Scalar(0, 0, 0), thickness);
+    // 使用抗锯齿选项绘制文本
+    cv::putText(result_image, text, cv::Point(text_x, text_y), font, font_scale, cv::Scalar(0, 0, 0), thickness, cv::LINE_AA);
 
-  return result_image;
+    return result_image;
 }
+
 
 }  // namespace traffic_light_classifier
 
