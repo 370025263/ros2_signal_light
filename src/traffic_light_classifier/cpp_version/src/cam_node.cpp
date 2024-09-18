@@ -32,7 +32,6 @@ CamNode::CamNode(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(this->get_logger(), "Dataset size: %zu", annotations_.size());
   RCLCPP_INFO(this->get_logger(), "Classes: %s", getClassesString().c_str());
 }
-
 void CamNode::loadDataset()
 {
   namespace fs = std::filesystem;
@@ -58,14 +57,30 @@ void CamNode::loadDataset()
             tokens.push_back(token);
           }
           
-          if (tokens.size() >= 7) {
-            std::string filename = tokens[0]; // 'Filename' column
-            std::string origin_file = tokens[1]; // 'Origin file' column
-            std::string annotation_tag = tokens[2]; // 'Annotation tag' column
+          // 添加调试信息
+          if (tokens.size() < 7) {
+            RCLCPP_WARN(this->get_logger(), "Invalid line (less than 7 tokens): %s", line.c_str());
+            continue; // 跳过这行
+          }
+          
+          // 检查 tokens[3] 到 tokens[6]
+          for (int i = 3; i <= 6; ++i) {
+            if (tokens[i].empty()) {
+              RCLCPP_WARN(this->get_logger(), "Empty token at position %d in line: %s", i, line.c_str());
+              continue; // 跳过这行
+            }
+          }
+
+          try {
             int ulx = std::stoi(tokens[3]); // 'Upper left corner X'
             int uly = std::stoi(tokens[4]); // 'Upper left corner Y'
             int lrx = std::stoi(tokens[5]); // 'Lower right corner X'
             int lry = std::stoi(tokens[6]); // 'Lower right corner Y'
+
+            // 其余代码保持不变
+            std::string filename = tokens[0]; // 'Filename' column
+            std::string origin_file = tokens[1]; // 'Origin file' column
+            std::string annotation_tag = tokens[2]; // 'Annotation tag' column
 
             std::string img_name = fs::path(filename).filename().string();
             std::string clip_name = fs::path(origin_file).parent_path().filename().string();
@@ -84,6 +99,12 @@ void CamNode::loadDataset()
             } else {
               RCLCPP_WARN(this->get_logger(), "Image file does not exist: %s", img_path.c_str());
             }
+          } catch (const std::invalid_argument& e) {
+            RCLCPP_ERROR(this->get_logger(), "Invalid integer in line: %s", line.c_str());
+            continue; // 跳过这行
+          } catch (const std::out_of_range& e) {
+            RCLCPP_ERROR(this->get_logger(), "Integer out of range in line: %s", line.c_str());
+            continue; // 跳过这行
           }
         }
       }
