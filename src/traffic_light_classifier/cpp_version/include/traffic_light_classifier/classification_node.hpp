@@ -6,12 +6,14 @@
 #include <std_msgs/msg/string.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include "traffic_light_msg/msg/traffic_light_msg.hpp"
-#include <autoware_perception_msgs/msg/traffic_light_group_array.hpp>
+#include <autoware_perception_msgs/msg/TrafficLightGroupArray.hpp>
 
 #include <opencv2/opencv.hpp>
-#include <opencv2/dnn.hpp>
 
 #include <map>
+
+// Include ONNX Runtime headers
+#include <onnxruntime_cxx_api.h>
 
 namespace traffic_light_classifier
 {
@@ -33,9 +35,12 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_result_publisher_;
   rclcpp::Publisher<autoware_perception_msgs::msg::TrafficLightGroupArray>::SharedPtr traffic_signals_publisher_;
 
-  // 使用 OpenCV DNN 模块加载 ONNX 模型
-  cv::dnn::Net detection_net_;
-  cv::dnn::Net classification_net_;
+  // ONNX Runtime session pointers
+  Ort::Env env_;
+  Ort::Session* detection_session_;
+  Ort::Session* classification_session_;
+
+  Ort::SessionOptions session_options_;
 
   std::map<std::string, int> class_to_idx_;
   std::map<int, std::string> idx_to_class_;
@@ -45,7 +50,7 @@ private:
   double total_processing_time_;
   int total_processed_images_;
 
-  // 假设的相机内参矩阵，用于将像素坐标转换为世界坐标（根据您的相机参数进行设置）
+  // Placeholder for camera intrinsic matrix (if needed)
   cv::Mat camera_intrinsic_matrix_;
 };
 
