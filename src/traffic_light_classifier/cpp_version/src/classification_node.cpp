@@ -4,11 +4,17 @@
 #include <chrono>
 #include <geometry_msgs/msg/point.hpp>
 
+// For ONNX Runtime
+#include <onnxruntime_cxx_api.h>
+
 namespace traffic_light_classifier
 {
 
 ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
 : Node("classification_node", options),
+  env_(ORT_LOGGING_LEVEL_WARNING, "TrafficLightClassifier"),
+  detection_session_(nullptr),
+  classification_session_(nullptr),
   total_predictions_(0),
   correct_predictions_(0),
   total_processing_time_(0.0),
@@ -31,21 +37,22 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
   traffic_signals_publisher_ = this->create_publisher<autoware_perception_msgs::msg::TrafficLightGroupArray>(
     "/perception/traffic_light_recognition/traffic_signals", 10);
 
-  // 初始化模型和其他成员变量
+  // Initialize models and other member variables
   std::string package_share_dir = ament_index_cpp::get_package_share_directory("traffic_light_classifier");
   std::string detection_model_path = package_share_dir + "/models/fasterrcnn_resnet50_fpn.onnx";
   std::string classification_model_path = package_share_dir + "/models/best_model.onnx";
 
-  // 加载 ONNX 模型
-  detection_net_ = cv::dnn::readNetFromONNX(detection_model_path);
-  classification_net_ = cv::dnn::readNetFromONNX(classification_model_path);
+  // Set session options (optional)
+  session_options_.SetIntraOpNumThreads(1);
+  session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-  if (detection_net_.empty() || classification_net_.empty()) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load the models");
-    rclcpp::shutdown();
-  }
+  // Load the detection model
+  detection_session_ = new Ort::Session(env_, detection_model_path.c_str(), session_options_);
 
-  // 初始化 class_to_idx_ 和 idx_to_class_
+  // Load the classification model
+  classification_session_ = new Ort::Session(env_, classification_model_path.c_str(), session_options_);
+
+  // Initialize class mappings
   class_to_idx_ = {{"warning", 0}, {"stop", 1}, {"stopLeft", 2}, {"go", 3}, {"goLeft", 4}, {"warningLeft", 5}};
   for (const auto& pair : class_to_idx_) {
     idx_to_class_[pair.second] = pair.first;
@@ -53,87 +60,122 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
 
   this->declare_parameter("visualization_enabled", true);
 
-  // 初始化相机内参矩阵（根据实际相机参数设置）
-  // 假设焦距为 fx=fy=1000，主点在图像中心 (cx, cy)
-  int image_width = 800;  // 根据实际情况设置
-  int image_height = 600; // 根据实际情况设置
-  double fx = 1000.0;
-  double fy = 1000.0;
-  double cx = image_width / 2.0;
-  double cy = image_height / 2.0;
-  camera_intrinsic_matrix_ = (cv::Mat_<double>(3,3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+  // If needed, initialize camera intrinsic matrix here
 }
 
 void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
 {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  // 预处理图像以供检测模型使用
-  cv::Mat blob;
-  cv::dnn::blobFromImage(cv_image, blob, 1.0 / 255, cv::Size(800, 800), cv::Scalar(0, 0, 0), true, false);
+  // Preprocess the image for detection
+  cv::Mat resized_image;
+  cv::resize(cv_image, resized_image, cv::Size(800, 800));
+  cv::Mat rgb_image;
+  cv::cvtColor(resized_image, rgb_image, cv::COLOR_BGR2RGB);
+  rgb_image.convertTo(rgb_image, CV_32F, 1.0 / 255);
 
-  // 设置输入并执行检测
-  detection_net_.setInput(blob);
-  std::vector<cv::Mat> detection_outputs;
-  std::vector<std::string> detection_output_names = detection_net_.getUnconnectedOutLayersNames();
-  detection_net_.forward(detection_outputs, detection_output_names);
+  // Create input tensor
+  std::vector<int64_t> input_dims = {1, rgb_image.channels(), rgb_image.rows, rgb_image.cols};
+  std::vector<float> input_tensor_values(rgb_image.begin<float>(), rgb_image.end<float>());
 
-  // 解析检测结果
+  // Prepare input tensor
+  Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemTypeDefault);
+  Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(), input_tensor_values.size(), input_dims.data(), input_dims.size());
+
+  // Run detection model
+  std::vector<const char*> input_names = {detection_session_->GetInputName(0, Ort::AllocatorWithDefaultOptions())};
+  std::vector<const char*> output_names = {detection_session_->GetOutputName(0, Ort::AllocatorWithDefaultOptions()),
+                                           detection_session_->GetOutputName(1, Ort::AllocatorWithDefaultOptions()),
+                                           detection_session_->GetOutputName(2, Ort::AllocatorWithDefaultOptions())};
+
+  auto output_tensors = detection_session_->Run(Ort::RunOptions{nullptr}, input_names.data(), &input_tensor, 1, output_names.data(), output_names.size());
+
+  // Extract outputs
+  // Assuming outputs are: boxes, labels, scores
+  std::vector<float> boxes = output_tensors[0].GetTensorMutableData<float>();
+  std::vector<int64_t> boxes_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+
+  std::vector<int64_t> labels = output_tensors[1].GetTensorMutableData<int64_t>();
+  std::vector<int64_t> labels_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
+
+  std::vector<float> scores = output_tensors[2].GetTensorMutableData<float>();
+  std::vector<int64_t> scores_shape = output_tensors[2].GetTensorTypeAndShapeInfo().GetShape();
+
+  // Process detection results
   std::vector<cv::Rect> detected_boxes;
   std::vector<std::string> detected_labels;
   std::vector<float> detected_scores;
 
-  // 填充 autoware_perception_msgs::msg::TrafficLightGroupArray 消息
   autoware_perception_msgs::msg::TrafficLightGroupArray traffic_light_group_array_msg;
   traffic_light_group_array_msg.stamp = this->now();
 
-  // 创建一个 TrafficLightGroup
   autoware_perception_msgs::msg::TrafficLightGroup traffic_light_group;
-  traffic_light_group.traffic_light_group_id = 0;  // 根据实际情况设置
+  traffic_light_group.traffic_light_group_id = 0;  // Modify as needed
 
-  // 处理检测结果
   float score_threshold = 0.5;
 
-  // 假设检测模型的输出为 [num_detections, 7]，每一行格式为 [batch_id, class_id, score, x1, y1, x2, y2]
-  cv::Mat detections = detection_outputs[0];
-  for (int i = 0; i < detections.rows; ++i) {
-    float score = detections.at<float>(i, 2);
-    if (score > score_threshold) {
-      int class_id = static_cast<int>(detections.at<float>(i, 1));
-      int x1 = static_cast<int>(detections.at<float>(i, 3) * cv_image.cols);
-      int y1 = static_cast<int>(detections.at<float>(i, 4) * cv_image.rows);
-      int x2 = static_cast<int>(detections.at<float>(i, 5) * cv_image.cols);
-      int y2 = static_cast<int>(detections.at<float>(i, 6) * cv_image.rows);
+  size_t num_detections = scores_shape[1];  // Assuming shape is [1, N]
 
-      cv::Rect box(x1, y1, x2 - x1, y2 - y1);
+  for (size_t i = 0; i < num_detections; ++i) {
+    float score = scores[i];
+    if (score > score_threshold) {
+      int label = static_cast<int>(labels[i]);
+      float x1 = boxes[i * 4];
+      float y1 = boxes[i * 4 + 1];
+      float x2 = boxes[i * 4 + 2];
+      float y2 = boxes[i * 4 + 3];
+
+      // Scale boxes back to original image size
+      x1 *= static_cast<float>(cv_image.cols) / 800.0f;
+      y1 *= static_cast<float>(cv_image.rows) / 800.0f;
+      x2 *= static_cast<float>(cv_image.cols) / 800.0f;
+      y2 *= static_cast<float>(cv_image.rows) / 800.0f;
+
+      cv::Rect box(cv::Point(static_cast<int>(x1), static_cast<int>(y1)), cv::Point(static_cast<int>(x2), static_cast<int>(y2)));
       box &= cv::Rect(0, 0, cv_image.cols, cv_image.rows);
 
       detected_boxes.push_back(box);
       detected_scores.push_back(score);
 
-      // 对每个检测到的区域进行分类
+      // Crop the detected region
       cv::Mat cropped_img = cv_image(box);
 
-      cv::Mat classification_blob;
-      cv::dnn::blobFromImage(cropped_img, classification_blob, 1.0 / 255, cv::Size(224, 224), cv::Scalar(0, 0, 0), true, false);
+      // Preprocess for classification
+      cv::Mat class_resized_img;
+      cv::resize(cropped_img, class_resized_img, cv::Size(224, 224));
+      cv::cvtColor(class_resized_img, class_resized_img, cv::COLOR_BGR2RGB);
+      class_resized_img.convertTo(class_resized_img, CV_32F, 1.0 / 255);
 
-      classification_net_.setInput(classification_blob);
-      cv::Mat classifier_output = classification_net_.forward();
+      // Create input tensor for classification
+      std::vector<int64_t> class_input_dims = {1, class_resized_img.channels(), class_resized_img.rows, class_resized_img.cols};
+      std::vector<float> class_input_tensor_values(class_resized_img.begin<float>(), class_resized_img.end<float>());
 
-      cv::Point classIdPoint;
-      double confidence;
-      minMaxLoc(classifier_output, nullptr, &confidence, nullptr, &classIdPoint);
-      int predicted_class_id = classIdPoint.x;
+      Ort::Value class_input_tensor = Ort::Value::CreateTensor<float>(memory_info, class_input_tensor_values.data(), class_input_tensor_values.size(), class_input_dims.data(), class_input_dims.size());
+
+      // Run classification model
+      std::vector<const char*> class_input_names = {classification_session_->GetInputName(0, Ort::AllocatorWithDefaultOptions())};
+      std::vector<const char*> class_output_names = {classification_session_->GetOutputName(0, Ort::AllocatorWithDefaultOptions())};
+
+      auto class_output_tensors = classification_session_->Run(Ort::RunOptions{nullptr}, class_input_names.data(), &class_input_tensor, 1, class_output_names.data(), class_output_names.size());
+
+      // Extract classification result
+      float* class_scores = class_output_tensors[0].GetTensorMutableData<float>();
+      size_t class_num = class_output_tensors[0].GetTensorTypeAndShapeInfo().GetShape()[1];
+
+      // Get the class with highest score
+      auto max_elem = std::max_element(class_scores, class_scores + class_num);
+      int predicted_class_id = static_cast<int>(std::distance(class_scores, max_elem));
+      double confidence = *max_elem;
 
       std::string predicted_label = idx_to_class_[predicted_class_id];
       detected_labels.push_back(predicted_label);
 
       total_processed_images_++;
 
-      // 构建 TrafficLightElement
+      // Build TrafficLightElement
       autoware_perception_msgs::msg::TrafficLightElement traffic_light_element;
 
-      // 设置颜色
+      // Set color
       if (predicted_label == "stop" || predicted_label == "stopLeft") {
         traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::RED;
       } else if (predicted_label == "warning" || predicted_label == "warningLeft") {
@@ -144,38 +186,30 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
         traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::UNKNOWN;
       }
 
-      // 设置形状
+      // Set shape
       if (predicted_label.find("Left") != std::string::npos) {
         traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::LEFT_ARROW;
       } else {
         traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::CIRCLE;
       }
 
-      // 设置状态，假设为 SOLID_ON
+      // Set status, assume SOLID_ON
       traffic_light_element.status = autoware_perception_msgs::msg::TrafficLightElement::SOLID_ON;
 
-      // 设置置信度
+      // Set confidence
       traffic_light_element.confidence = static_cast<float>(confidence);
 
-      // 将 TrafficLightElement 添加到 TrafficLightGroup 中
+      // Add element to group
       traffic_light_group.elements.push_back(traffic_light_element);
-
-      // 交通信号灯组的 ID 可以根据实际需求设置
-      traffic_light_group.traffic_light_group_id = 0;  // 示例中设为0
-
-      // 如果需要计算位置，可以在这里添加位置计算逻辑
-      // 由于 TrafficLightGroup 和 TrafficLightElement 中没有位置字段
-      // 如果需要位置信息，可能需要扩展消息类型或通过其他方式传递
-
     }
   }
 
-  // 将 TrafficLightGroup 添加到 TrafficLightGroupArray 中
+  // Add group to array
   traffic_light_group_array_msg.traffic_light_groups.push_back(traffic_light_group);
 
   traffic_signals_publisher_->publish(traffic_light_group_array_msg);
 
-  // 发布分类结果
+  // Publish classification result
   auto result_msg = std::make_unique<std_msgs::msg::String>();
   std::string concatenated_labels;
   for (const auto& label : detected_labels) {
@@ -184,7 +218,7 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   result_msg->data = "Predicted labels: " + concatenated_labels;
   result_publisher_->publish(std::move(result_msg));
 
-  // 可视化
+  // Visualization
   if (this->get_parameter("visualization_enabled").as_bool()) {
     cv::Mat result_image = drawResult(cv_image, detected_boxes, detected_labels);
     sensor_msgs::msg::Image::SharedPtr result_img_msg = 
@@ -192,7 +226,7 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
     image_result_publisher_->publish(*result_img_msg);
   }
 
-  // 计算处理时间
+  // Compute processing time
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
   total_processing_time_ += duration.count() / 1000.0;
@@ -240,6 +274,13 @@ void ClassificationNode::debugCallback(const traffic_light_msg::msg::TrafficLigh
   }
   
   processImage(cv_ptr->image, msg->label);
+}
+
+ClassificationNode::~ClassificationNode()
+{
+  // Clean up sessions
+  delete detection_session_;
+  delete classification_session_;
 }
 
 }  // namespace traffic_light_classifier
