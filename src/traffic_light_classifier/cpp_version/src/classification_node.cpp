@@ -89,11 +89,13 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   Ort::AllocatedStringPtr input_name_ptr = detection_session_->GetInputNameAllocated(0, allocator);
   std::vector<const char*> input_names = {input_name_ptr.get()};
 
-  std::array<Ort::AllocatedStringPtr, 3> output_name_ptrs;
+  std::vector<Ort::AllocatedStringPtr output_name_ptrs;
+  output_name_ptrs.reserve(3);
+
   std::vector<const char*> output_names;
   for (size_t i = 0; i < 3; ++i) {
-    output_name_ptrs[i] = detection_session_->GetOutputNameAllocated(i, allocator);
-    output_names.push_back(output_name_ptrs[i].get());
+    output_name_ptrs.push_back(detection_session_->GetOutputNameAllocated(i, allocator));
+    output_names.push_back(output_name_ptrs.back().get());
   }
 
   auto output_tensors = detection_session_->Run(Ort::RunOptions{nullptr}, input_names.data(), &input_tensor, 1, output_names.data(), output_names.size());
@@ -130,7 +132,7 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   for (size_t i = 0; i < num_detections; ++i) {
     float score = scores[i];
     if (score > score_threshold) {
-      int label = static_cast<int>(labels[i]);
+      //int label = static_cast<int>(labels[i]);
       float x1 = boxes[i * 4];
       float y1 = boxes[i * 4 + 1];
       float x2 = boxes[i * 4 + 2];
