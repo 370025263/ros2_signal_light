@@ -2,6 +2,7 @@
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <chrono>
+#include <geometry_msgs/msg/point.hpp>
 
 namespace traffic_light_classifier
 {
@@ -161,6 +162,11 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
 
       // 交通信号灯组的 ID 可以根据实际需求设置
       traffic_light_group.traffic_light_group_id = 0;  // 示例中设为0
+
+      // 如果需要计算位置，可以在这里添加位置计算逻辑
+      // 由于 TrafficLightGroup 和 TrafficLightElement 中没有位置字段
+      // 如果需要位置信息，可能需要扩展消息类型或通过其他方式传递
+
     }
   }
 
@@ -240,3 +246,11 @@ void ClassificationNode::debugCallback(const traffic_light_msg::msg::TrafficLigh
 
 #include <rclcpp_components/register_node_macro.hpp>
 RCLCPP_COMPONENTS_REGISTER_NODE(traffic_light_classifier::ClassificationNode)
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<traffic_light_classifier::ClassificationNode>());
+  rclcpp::shutdown();
+  return 0;
+}
