@@ -15,15 +15,19 @@ find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS dnn)  # 添加 dnn 模块
+find_package(OpenCV REQUIRED)
 find_package(traffic_light_msg REQUIRED)
 find_package(autoware_perception_msgs REQUIRED)
+
+# Include ONNX Runtime
+find_package(onnxruntime REQUIRED)
 
 include_directories(
   include
   ${OpenCV_INCLUDE_DIRS}
   ${rclcpp_INCLUDE_DIRS}
   ${rclcpp_components_INCLUDE_DIRS}
+  ${ONNXRUNTIME_INCLUDE_DIRS}  # Include ONNX Runtime headers
 )
 
 add_executable(cam_node src/cam_node.cpp)
@@ -52,7 +56,9 @@ ament_target_dependencies(classification_node
 target_link_libraries(classification_node 
   ${OpenCV_LIBRARIES} 
   ${rclcpp_LIBRARIES} 
-  ${rclcpp_components_LIBRARIES})
+  ${rclcpp_components_LIBRARIES}
+  ${ONNXRUNTIME_LIBRARIES}  # Link against ONNX Runtime
+)
 
 install(TARGETS
   cam_node
@@ -71,6 +77,6 @@ install(DIRECTORY
 )
 
 ament_export_include_directories(include)
-ament_export_dependencies(rclcpp sensor_msgs std_msgs cv_bridge OpenCV traffic_light_msg autoware_perception_msgs)
+ament_export_dependencies(rclcpp sensor_msgs std_msgs cv_bridge OpenCV traffic_light_msg autoware_perception_msgs onnxruntime)
 
 ament_package()
