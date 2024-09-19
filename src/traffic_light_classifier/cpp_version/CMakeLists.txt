@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.8)
 project(traffic_light_classifier)
 
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
+# 设置C++标准
+set(CMAKE_CXX_STANDARD 17)
 
+# 编译选项
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# 查找所需的包
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -19,17 +20,29 @@ find_package(OpenCV REQUIRED)
 find_package(traffic_light_msg REQUIRED)
 find_package(autoware_perception_msgs REQUIRED)
 
-# Include ONNX Runtime
-find_package(onnxruntime REQUIRED)
+# ONNX Runtime 设置
+set(ONNXRUNTIME_ROOT_DIR "/home/casia/Downloads/onnxruntime-linux-x64-gpu-1.19.2")
+set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_ROOT_DIR}/include")
+set(ONNXRUNTIME_LIB_DIR "${ONNXRUNTIME_ROOT_DIR}/lib")
 
+# 查找 ONNX Runtime 库
+find_library(ONNXRUNTIME_LIBRARY
+  NAMES onnxruntime
+  PATHS ${ONNXRUNTIME_LIB_DIR}
+  NO_DEFAULT_PATH
+  REQUIRED
+)
+
+# 包含目录
 include_directories(
   include
   ${OpenCV_INCLUDE_DIRS}
   ${rclcpp_INCLUDE_DIRS}
   ${rclcpp_components_INCLUDE_DIRS}
-  ${ONNXRUNTIME_INCLUDE_DIRS}  # Include ONNX Runtime headers
+  ${ONNXRUNTIME_INCLUDE_DIRS}
 )
 
+# 添加可执行文件
 add_executable(cam_node src/cam_node.cpp)
 ament_target_dependencies(cam_node
   rclcpp
@@ -41,7 +54,8 @@ ament_target_dependencies(cam_node
 target_link_libraries(cam_node 
   ${OpenCV_LIBRARIES}
   ${rclcpp_LIBRARIES}
-  ${rclcpp_components_LIBRARIES})
+  ${rclcpp_components_LIBRARIES}
+)
 
 add_executable(classification_node src/classification_node.cpp)
 ament_target_dependencies(classification_node
@@ -57,9 +71,10 @@ target_link_libraries(classification_node
   ${OpenCV_LIBRARIES} 
   ${rclcpp_LIBRARIES} 
   ${rclcpp_components_LIBRARIES}
-  ${ONNXRUNTIME_LIBRARIES}  # Link against ONNX Runtime
+  ${ONNXRUNTIME_LIBRARY}
 )
 
+# 安装
 install(TARGETS
   cam_node
   classification_node
@@ -76,7 +91,16 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+# 导出依赖
 ament_export_include_directories(include)
-ament_export_dependencies(rclcpp sensor_msgs std_msgs cv_bridge OpenCV traffic_light_msg autoware_perception_msgs onnxruntime)
+ament_export_dependencies(
+  rclcpp 
+  sensor_msgs 
+  std_msgs 
+  cv_bridge 
+  OpenCV 
+  traffic_light_msg 
+  autoware_perception_msgs
+)
 
 ament_package()

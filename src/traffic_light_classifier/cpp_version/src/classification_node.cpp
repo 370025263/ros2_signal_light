@@ -37,22 +37,22 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
   traffic_signals_publisher_ = this->create_publisher<autoware_perception_msgs::msg::TrafficLightGroupArray>(
     "/perception/traffic_light_recognition/traffic_signals", 10);
 
-  // Initialize models and other member variables
+  // 初始化模型和其他成员变量
   std::string package_share_dir = ament_index_cpp::get_package_share_directory("traffic_light_classifier");
   std::string detection_model_path = package_share_dir + "/models/fasterrcnn_resnet50_fpn.onnx";
   std::string classification_model_path = package_share_dir + "/models/best_model.onnx";
 
-  // Set session options (optional)
+  // 设置会话选项（可选）
   session_options_.SetIntraOpNumThreads(1);
   session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-  // Load the detection model
+  // 加载检测模型
   detection_session_ = new Ort::Session(env_, detection_model_path.c_str(), session_options_);
 
-  // Load the classification model
+  // 加载分类模型
   classification_session_ = new Ort::Session(env_, classification_model_path.c_str(), session_options_);
 
-  // Initialize class mappings
+  // 初始化类别映射
   class_to_idx_ = {{"warning", 0}, {"stop", 1}, {"stopLeft", 2}, {"go", 3}, {"goLeft", 4}, {"warningLeft", 5}};
   for (const auto& pair : class_to_idx_) {
     idx_to_class_[pair.second] = pair.first;
@@ -60,48 +60,59 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
 
   this->declare_parameter("visualization_enabled", true);
 
-  // If needed, initialize camera intrinsic matrix here
+  // 如果需要，在这里初始化相机内参矩阵
 }
 
 void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
 {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  // Preprocess the image for detection
+  // 预处理图像用于检测
   cv::Mat resized_image;
   cv::resize(cv_image, resized_image, cv::Size(800, 800));
   cv::Mat rgb_image;
   cv::cvtColor(resized_image, rgb_image, cv::COLOR_BGR2RGB);
   rgb_image.convertTo(rgb_image, CV_32F, 1.0 / 255);
 
-  // Create input tensor
+  // 创建输入张量
   std::vector<int64_t> input_dims = {1, rgb_image.channels(), rgb_image.rows, rgb_image.cols};
   std::vector<float> input_tensor_values(rgb_image.begin<float>(), rgb_image.end<float>());
 
-  // Prepare input tensor
+  // 准备输入张量
   Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemTypeDefault);
   Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(), input_tensor_values.size(), input_dims.data(), input_dims.size());
 
-  // Run detection model
-  std::vector<const char*> input_names = {detection_session_->GetInputName(0, Ort::AllocatorWithDefaultOptions())};
-  std::vector<const char*> output_names = {detection_session_->GetOutputName(0, Ort::AllocatorWithDefaultOptions()),
-                                           detection_session_->GetOutputName(1, Ort::AllocatorWithDefaultOptions()),
-                                           detection_session_->GetOutputName(2, Ort::AllocatorWithDefaultOptions())};
+  // 运行检测模型
+  Ort::AllocatorWithDefaultOptions allocator;
+  
+  // 获取输入和输出名称
+  Ort::AllocatedStringPtr input_name_ptr = detection_session_->GetInputNameAllocated(0, allocator);
+  std::vector<const char*> input_names = {input_name_ptr.get()};
+
+  std::array<Ort::AllocatedStringPtr, 3> output_name_ptrs;
+  std::vector<const char*> output_names;
+  for (size_t i = 0; i < 3; ++i) {
+    output_name_ptrs[i] = detection_session_->GetOutputNameAllocated(i, allocator);
+    output_names.push_back(output_name_ptrs[i].get());
+  }
 
   auto output_tensors = detection_session_->Run(Ort::RunOptions{nullptr}, input_names.data(), &input_tensor, 1, output_names.data(), output_names.size());
 
-  // Extract outputs
-  // Assuming outputs are: boxes, labels, scores
-  std::vector<float> boxes = output_tensors[0].GetTensorMutableData<float>();
+  // 提取输出
+  float* boxes_data = output_tensors[0].GetTensorMutableData<float>();
+  int64_t* labels_data = output_tensors[1].GetTensorMutableData<int64_t>();
+  float* scores_data = output_tensors[2].GetTensorMutableData<float>();
+
   std::vector<int64_t> boxes_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-
-  std::vector<int64_t> labels = output_tensors[1].GetTensorMutableData<int64_t>();
   std::vector<int64_t> labels_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
-
-  std::vector<float> scores = output_tensors[2].GetTensorMutableData<float>();
   std::vector<int64_t> scores_shape = output_tensors[2].GetTensorTypeAndShapeInfo().GetShape();
 
-  // Process detection results
+  // 将原始指针转换为向量
+  std::vector<float> boxes(boxes_data, boxes_data + boxes_shape[1] * 4);
+  std::vector<int64_t> labels(labels_data, labels_data + labels_shape[1]);
+  std::vector<float> scores(scores_data, scores_data + scores_shape[1]);
+
+  // 处理检测结果
   std::vector<cv::Rect> detected_boxes;
   std::vector<std::string> detected_labels;
   std::vector<float> detected_scores;
@@ -110,11 +121,11 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   traffic_light_group_array_msg.stamp = this->now();
 
   autoware_perception_msgs::msg::TrafficLightGroup traffic_light_group;
-  traffic_light_group.traffic_light_group_id = 0;  // Modify as needed
+  traffic_light_group.traffic_light_group_id = 0;  // 根据需要修改
 
   float score_threshold = 0.5;
 
-  size_t num_detections = scores_shape[1];  // Assuming shape is [1, N]
+  size_t num_detections = scores.size();
 
   for (size_t i = 0; i < num_detections; ++i) {
     float score = scores[i];
@@ -125,7 +136,7 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
       float x2 = boxes[i * 4 + 2];
       float y2 = boxes[i * 4 + 3];
 
-      // Scale boxes back to original image size
+      // 将边界框缩放回原始图像大小
       x1 *= static_cast<float>(cv_image.cols) / 800.0f;
       y1 *= static_cast<float>(cv_image.rows) / 800.0f;
       x2 *= static_cast<float>(cv_image.cols) / 800.0f;
@@ -137,32 +148,35 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
       detected_boxes.push_back(box);
       detected_scores.push_back(score);
 
-      // Crop the detected region
+      // 裁剪检测到的区域
       cv::Mat cropped_img = cv_image(box);
 
-      // Preprocess for classification
+      // 预处理用于分类
       cv::Mat class_resized_img;
       cv::resize(cropped_img, class_resized_img, cv::Size(224, 224));
       cv::cvtColor(class_resized_img, class_resized_img, cv::COLOR_BGR2RGB);
       class_resized_img.convertTo(class_resized_img, CV_32F, 1.0 / 255);
 
-      // Create input tensor for classification
+      // 创建分类的输入张量
       std::vector<int64_t> class_input_dims = {1, class_resized_img.channels(), class_resized_img.rows, class_resized_img.cols};
       std::vector<float> class_input_tensor_values(class_resized_img.begin<float>(), class_resized_img.end<float>());
 
       Ort::Value class_input_tensor = Ort::Value::CreateTensor<float>(memory_info, class_input_tensor_values.data(), class_input_tensor_values.size(), class_input_dims.data(), class_input_dims.size());
 
-      // Run classification model
-      std::vector<const char*> class_input_names = {classification_session_->GetInputName(0, Ort::AllocatorWithDefaultOptions())};
-      std::vector<const char*> class_output_names = {classification_session_->GetOutputName(0, Ort::AllocatorWithDefaultOptions())};
+      // 运行分类模型
+      Ort::AllocatedStringPtr class_input_name_ptr = classification_session_->GetInputNameAllocated(0, allocator);
+      std::vector<const char*> class_input_names = {class_input_name_ptr.get()};
+
+      Ort::AllocatedStringPtr class_output_name_ptr = classification_session_->GetOutputNameAllocated(0, allocator);
+      std::vector<const char*> class_output_names = {class_output_name_ptr.get()};
 
       auto class_output_tensors = classification_session_->Run(Ort::RunOptions{nullptr}, class_input_names.data(), &class_input_tensor, 1, class_output_names.data(), class_output_names.size());
 
-      // Extract classification result
+      // 提取分类结果
       float* class_scores = class_output_tensors[0].GetTensorMutableData<float>();
       size_t class_num = class_output_tensors[0].GetTensorTypeAndShapeInfo().GetShape()[1];
 
-      // Get the class with highest score
+      // 获取得分最高的类别
       auto max_elem = std::max_element(class_scores, class_scores + class_num);
       int predicted_class_id = static_cast<int>(std::distance(class_scores, max_elem));
       double confidence = *max_elem;
@@ -172,10 +186,10 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
 
       total_processed_images_++;
 
-      // Build TrafficLightElement
+      // 构建 TrafficLightElement
       autoware_perception_msgs::msg::TrafficLightElement traffic_light_element;
 
-      // Set color
+      // 设置颜色
       if (predicted_label == "stop" || predicted_label == "stopLeft") {
         traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::RED;
       } else if (predicted_label == "warning" || predicted_label == "warningLeft") {
@@ -186,30 +200,30 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
         traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::UNKNOWN;
       }
 
-      // Set shape
+      // 设置形状
       if (predicted_label.find("Left") != std::string::npos) {
         traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::LEFT_ARROW;
       } else {
         traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::CIRCLE;
       }
 
-      // Set status, assume SOLID_ON
+      // 设置状态，假设为 SOLID_ON
       traffic_light_element.status = autoware_perception_msgs::msg::TrafficLightElement::SOLID_ON;
 
-      // Set confidence
+      // 设置置信度
       traffic_light_element.confidence = static_cast<float>(confidence);
 
-      // Add element to group
+      // 将元素添加到组中
       traffic_light_group.elements.push_back(traffic_light_element);
     }
   }
 
-  // Add group to array
+  // 将组添加到数组中
   traffic_light_group_array_msg.traffic_light_groups.push_back(traffic_light_group);
 
   traffic_signals_publisher_->publish(traffic_light_group_array_msg);
 
-  // Publish classification result
+  // 发布分类结果
   auto result_msg = std::make_unique<std_msgs::msg::String>();
   std::string concatenated_labels;
   for (const auto& label : detected_labels) {
@@ -218,7 +232,7 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   result_msg->data = "Predicted labels: " + concatenated_labels;
   result_publisher_->publish(std::move(result_msg));
 
-  // Visualization
+  // 可视化
   if (this->get_parameter("visualization_enabled").as_bool()) {
     cv::Mat result_image = drawResult(cv_image, detected_boxes, detected_labels);
     sensor_msgs::msg::Image::SharedPtr result_img_msg = 
@@ -226,15 +240,15 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
     image_result_publisher_->publish(*result_img_msg);
   }
 
-  // Compute processing time
+  // 计算处理时间
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
   total_processing_time_ += duration.count() / 1000.0;
   double avg_processing_time = total_processing_time_ / total_processed_images_;
 
-  RCLCPP_INFO(this->get_logger(), "Processing time: %.4f seconds", duration.count() / 1000.0);
-  RCLCPP_INFO(this->get_logger(), "Average processing time: %.4f seconds", avg_processing_time);
-  RCLCPP_INFO(this->get_logger(), "Total processed images: %d", total_processed_images_);
+  RCLCPP_INFO(this->get_logger(), "处理时间: %.4f 秒", duration.count() / 1000.0);
+  RCLCPP_INFO(this->get_logger(), "平均处理时间: %.4f 秒", avg_processing_time);
+RCLCPP_INFO(this->get_logger(), "总处理图像数: %d", total_processed_images_);
 }
 
 cv::Mat ClassificationNode::drawResult(const cv::Mat& image, const std::vector<cv::Rect>& boxes, const std::vector<std::string>& labels)
@@ -256,7 +270,7 @@ void ClassificationNode::imageCallback(const sensor_msgs::msg::Image::SharedPtr 
   try {
     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
   } catch (cv_bridge::Exception& e) {
-    RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+    RCLCPP_ERROR(this->get_logger(), "cv_bridge 异常: %s", e.what());
     return;
   }
   
@@ -269,7 +283,7 @@ void ClassificationNode::debugCallback(const traffic_light_msg::msg::TrafficLigh
   try {
     cv_ptr = cv_bridge::toCvCopy(msg->image, sensor_msgs::image_encodings::BGR8);
   } catch (cv_bridge::Exception& e) {
-    RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+    RCLCPP_ERROR(this->get_logger(), "cv_bridge 异常: %s", e.what());
     return;
   }
   
@@ -278,7 +292,7 @@ void ClassificationNode::debugCallback(const traffic_light_msg::msg::TrafficLigh
 
 ClassificationNode::~ClassificationNode()
 {
-  // Clean up sessions
+  // 清理会话
   delete detection_session_;
   delete classification_session_;
 }
