@@ -1,113 +1,29 @@
-casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ sudo apt install ros-humble-autoware-perception-msgs
-[sudo] password for casia: 
-Reading package lists... Done
-Building dependency tree... Done
-Reading state information... Done
-The following packages were automatically installed and are no longer required:
-  libatomic1:i386 libdrm-amdgpu1:i386 libdrm-intel1:i386 libdrm-nouveau2:i386 libdrm-radeon1:i386 libdrm2:i386 libedit2:i386
-  libelf1:i386 libexpat1:i386 libffi8:i386 libgl1:i386 libgl1-mesa-dri:i386 libglapi-mesa:i386 libglvnd0:i386 libglx-mesa0:i386
-  libglx0:i386 libicu70:i386 libllvm15:i386 libnvidia-egl-wayland1:i386 libpciaccess0:i386 libsensors5:i386 libstdc++6:i386
-  libwayland-client0:i386 libwayland-server0:i386 libwpe-1.0-1 libwpebackend-fdo-1.0-1 libx11-xcb1:i386 libxcb-dri2-0:i386
-  libxcb-dri3-0:i386 libxcb-glx0:i386 libxcb-present0:i386 libxcb-randr0:i386 libxcb-shm0:i386 libxcb-sync1:i386
-  libxcb-xfixes0:i386 libxfixes3:i386 libxml2:i386 libxshmfence1:i386 libxxf86vm1:i386
-Use 'sudo apt autoremove' to remove them.
-The following NEW packages will be installed:
-  ros-humble-autoware-perception-msgs
-0 upgraded, 1 newly installed, 0 to remove and 30 not upgraded.
-Need to get 171 kB of archives.
-After this operation, 2,628 kB of additional disk space will be used.
-Get:1 http://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu jammy/main amd64 ros-humble-autoware-perception-msgs amd64 1.1.0-1jammy.20240728.220114 [171 kB]
-Fetched 171 kB in 0s (437 kB/s)                             
-Selecting previously unselected package ros-humble-autoware-perception-msgs.
-(Reading database ... 366226 files and directories currently installed.)
-Preparing to unpack .../ros-humble-autoware-perception-msgs_1.1.0-1jammy.20240728.220114_amd64.deb ...
-Unpacking ros-humble-autoware-perception-msgs (1.1.0-1jammy.20240728.220114) ...
-Setting up ros-humble-autoware-perception-msgs (1.1.0-1jammy.20240728.220114) ...
-Processing triggers for libc-bin (2.35-0ubuntu3.8) ...
-casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ colcon build --packages-select traffic_light_classifier&&ros2 run traffic_light_classifier cam_node
-Starting >>> traffic_light_classifier
---- stderr: traffic_light_classifier                             
-/usr/bin/ld: /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o: in function `_start':
-(.text+0x1b): undefined reference to `main'
-/usr/bin/ld: CMakeFiles/cam_node.dir/src/cam_node.cpp.o: in function `traffic_light_classifier::CamNode::CamNode(rclcpp::NodeOptions const&)':
-cam_node.cpp:(.text+0xd94): undefined reference to `traffic_light_classifier::CamNode::loadDataset()'
-/usr/bin/ld: cam_node.cpp:(.text+0x1045): undefined reference to `traffic_light_classifier::CamNode::getClassesString[abi:cxx11]() const'
-/usr/bin/ld: CMakeFiles/cam_node.dir/src/cam_node.cpp.o: in function `traffic_light_classifier::CamNode::timerCallback()':
-cam_node.cpp:(.text+0x19bd): undefined reference to `traffic_light_classifier::CamNode::cropImage(cv::Mat const&, std::vector<int, std::allocator<int> > const&)'
-collect2: error: ld returned 1 exit status
-gmake[2]: *** [CMakeFiles/cam_node.dir/build.make:704: cam_node] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:139: CMakeFiles/cam_node.dir/all] Error 2
-gmake[1]: *** Waiting for unfinished jobs....
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp: In member function ‘void traffic_light_classifier::ClassificationNode::processImage(const cv::Mat&, const string&)’:
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:90:33: error: ‘using TrafficLightGroupArray = struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’} has no member named ‘header’
-   90 |   traffic_light_group_array_msg.header.stamp = this->now();
-      |                                 ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:91:33: error: ‘using TrafficLightGroupArray = struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’} has no member named ‘header’
-   91 |   traffic_light_group_array_msg.header.frame_id = "map";  // 根据实际情况设置
-      |                                 ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:95:23: error: ‘using TrafficLightGroup = struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’} has no member named ‘header’
-   95 |   traffic_light_group.header = traffic_light_group_array_msg.header;
-      |                       ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:95:62: error: ‘using TrafficLightGroupArray = struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’} has no member named ‘header’
-   95 |   traffic_light_group.header = traffic_light_group_array_msg.header;
-      |                                                              ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:99:21: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
-   99 |   for (int i = 0; i < scores.total(); ++i) {
-      |                   ~~^~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:135:38: error: ‘TrafficLightState’ is not a member of ‘autoware_perception_msgs::msg’; did you mean ‘TrafficLightGroup’?
-  135 |       autoware_perception_msgs::msg::TrafficLightState traffic_light_state;
-      |                                      ^~~~~~~~~~~~~~~~~
-      |                                      TrafficLightGroup
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:136:7: error: ‘traffic_light_state’ was not declared in this scope; did you mean ‘traffic_light_msg’?
-  136 |       traffic_light_state.id = static_cast<int32_t>(i);  // 根据实际情况设置唯一标识符
-      |       ^~~~~~~~~~~~~~~~~~~
-      |       traffic_light_msg
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:140:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  140 |         traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::RED;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:142:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  142 |         traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::AMBER;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:144:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  144 |         traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::GREEN;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:146:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  146 |         traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::UNKNOWN;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:151:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  151 |         traffic_light_state.shape = autoware_perception_msgs::msg::TrafficLightState::LEFT_ARROW;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:153:68: error: ‘autoware_perception_msgs::msg::TrafficLightState’ has not been declared
-  153 |         traffic_light_state.shape = autoware_perception_msgs::msg::TrafficLightState::CIRCLE;
-      |                                                                    ^~~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:160:27: error: ‘using TrafficLightGroup = struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’} has no member named ‘lights’
-  160 |       traffic_light_group.lights.push_back(traffic_light_state);
-      |                           ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:176:7: error: ‘geometry_msgs’ has not been declared
-  176 |       geometry_msgs::msg::Point position;
-      |       ^~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:177:7: error: ‘position’ was not declared in this scope
-  177 |       position.x = cam_point.at<double>(0, 0);
-      |       ^~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:183:29: error: ‘using TrafficLightGroup = struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroup_<std::allocator<void> >’} has no member named ‘position’
-  183 |         traffic_light_group.position = position;
-      |                             ^~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:102:11: warning: unused variable ‘label’ [-Wunused-variable]
-  102 |       int label = static_cast<int>(labels.at<float>(i));
-      |           ^~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:189:33: error: ‘using TrafficLightGroupArray = struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’ {aka ‘struct autoware_perception_msgs::msg::TrafficLightGroupArray_<std::allocator<void> >’} has no member named ‘groups’
-  189 |   traffic_light_group_array_msg.groups.push_back(traffic_light_group);
-      |                                 ^~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:66:83: warning: unused parameter ‘true_label’ [-Wunused-parameter]
-   66 | void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
-      |                                                                ~~~~~~~~~~~~~~~~~~~^~~~~~~~~~
-gmake[2]: *** [CMakeFiles/classification_node.dir/build.make:76: CMakeFiles/classification_node.dir/src/classification_node.cpp.o] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:165: CMakeFiles/classification_node.dir/all] Error 2
-gmake: *** [Makefile:146: all] Error 2
----
-Failed   <<< traffic_light_classifier [5.97s, exited with code 2]
-
-Summary: 0 packages finished [6.17s]
-  1 package failed: traffic_light_classifier
-  1 package had stderr output: traffic_light_classifier
-
+casia@casia-Precision-3650-Tower:~/app/autoware_source_code/autoware.universe$ ros2 interface show autoware_perception_msgs/msg/TrafficLightGroupArray
+builtin_interfaces/Time stamp
+        int32 sec
+        uint32 nanosec
+autoware_perception_msgs/TrafficLightGroup[] traffic_light_groups
+        int64 traffic_light_group_id
+        autoware_perception_msgs/TrafficLightElement[] elements
+                uint8 UNKNOWN = 0
+                uint8 RED = 1
+                uint8 AMBER = 2
+                uint8 GREEN = 3
+                uint8 WHITE = 4
+                uint8 CIRCLE = 1
+                uint8 LEFT_ARROW = 2
+                uint8 RIGHT_ARROW = 3
+                uint8 UP_ARROW = 4
+                uint8 UP_LEFT_ARROW=5
+                uint8 UP_RIGHT_ARROW=6
+                uint8 DOWN_ARROW = 7
+                uint8 DOWN_LEFT_ARROW = 8
+                uint8 DOWN_RIGHT_ARROW = 9
+                uint8 CROSS = 10
+                uint8 SOLID_OFF = 1
+                uint8 SOLID_ON = 2
+                uint8 FLASHING = 3
+                uint8 color
+                uint8 shape
+                uint8 status
+                float32 confidence
