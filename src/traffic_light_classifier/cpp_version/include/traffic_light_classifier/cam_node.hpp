@@ -43,6 +43,9 @@ private:
   std::random_device rd_;
   std::mt19937 gen_;
   std::uniform_int_distribution<> dis_;
+
+  // 新增成员变量
+  bool publish_cropped_images_;
 };
 
 }  // namespace traffic_light_classifier
