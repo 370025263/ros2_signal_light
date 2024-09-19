@@ -1,29 +1,4 @@
-
-casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ rm -rf build install log&&colcon build --packages-select traffic_light_classifier&&ros2 run traffic_light_classifier cam_node
-[0.226s] colcon.colcon_ros.prefix_path.ament WARNING The path '/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/install/traffic_light_classifier' in the environment variable AMENT_PREFIX_PATH doesn't exist
-[0.226s] colcon.colcon_ros.prefix_path.catkin WARNING The path '/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/install/traffic_light_classifier' in the environment variable CMAKE_PREFIX_PATH doesn't exist
-[0.226s] colcon.colcon_ros.prefix_path.catkin WARNING The path '/home/casia/Downloads/onnxruntime-linux-x64-gpu-1.16.2' in the environment variable CMAKE_PREFIX_PATH doesn't exist
-Starting >>> traffic_light_classifier
---- stderr: traffic_light_classifier                             
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp: In member function ‘void traffic_light_classifier::ClassificationNode::processImage(const cv::Mat&, const string&)’:
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:92:39: error: template argument 1 is invalid
-   92 |   std::vector<Ort::AllocatedStringPtr output_name_ptrs;
-      |                                       ^~~~~~~~~~~~~~~~
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:92:39: error: template argument 2 is invalid
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:93:3: error: ‘output_name_ptrs’ was not declared in this scope; did you mean ‘input_name_ptr’?
-   93 |   output_name_ptrs.reserve(3);
-      |   ^~~~~~~~~~~~~~~~
-      |   input_name_ptr
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:66:83: warning: unused parameter ‘true_label’ [-Wunused-parameter]
-   66 | void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
-      |                                                                ~~~~~~~~~~~~~~~~~~~^~~~~~~~~~
-gmake[2]: *** [CMakeFiles/classification_node.dir/build.make:76: CMakeFiles/classification_node.dir/src/classification_node.cpp.o] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:165: CMakeFiles/classification_node.dir/all] Error 2
-gmake: *** [Makefile:146: all] Error 2
----
-Failed   <<< traffic_light_classifier [6.38s, exited with code 2]
-
-Summary: 0 packages finished [6.57s]
-  1 package failed: traffic_light_classifier
-  1 package had stderr output: traffic_light_classifier
+casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ ros2 run traffic_light_classifier classification_node 
+/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/install/traffic_light_classifier/lib/traffic_light_classifier/classification_node: error while loading shared libraries: libonnxruntime.so.1: cannot open shared object file: No such file or directory
+[ros2run]: Process exited with failure 127
 
