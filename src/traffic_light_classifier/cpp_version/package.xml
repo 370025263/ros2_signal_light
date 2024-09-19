@@ -1,5 +1,4 @@
 <?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>traffic_light_classifier</name>
   <version>0.0.1</version>
@@ -15,6 +14,8 @@
   <depend>std_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>traffic_light_msg</depend>
+  <depend>autoware_perception_msgs</depend>
+  <depend>opencv</depend>  <!-- 添加 OpenCV 依赖 -->
 
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
