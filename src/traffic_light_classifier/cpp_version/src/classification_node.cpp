@@ -74,39 +74,37 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
   // 设置输入并执行检测
   detection_net_.setInput(blob);
   std::vector<cv::Mat> detection_outputs;
-  std::vector<std::string> detection_output_names = {"boxes", "labels", "scores"};
+  std::vector<std::string> detection_output_names = detection_net_.getUnconnectedOutLayersNames();
   detection_net_.forward(detection_outputs, detection_output_names);
 
-  cv::Mat boxes = detection_outputs[0];
-  cv::Mat labels = detection_outputs[1];
-  cv::Mat scores = detection_outputs[2];
-
+  // 解析检测结果
   std::vector<cv::Rect> detected_boxes;
   std::vector<std::string> detected_labels;
   std::vector<float> detected_scores;
 
   // 填充 autoware_perception_msgs::msg::TrafficLightGroupArray 消息
   autoware_perception_msgs::msg::TrafficLightGroupArray traffic_light_group_array_msg;
-  traffic_light_group_array_msg.header.stamp = this->now();
-  traffic_light_group_array_msg.header.frame_id = "map";  // 根据实际情况设置
+  traffic_light_group_array_msg.stamp = this->now();
 
   // 创建一个 TrafficLightGroup
   autoware_perception_msgs::msg::TrafficLightGroup traffic_light_group;
-  traffic_light_group.header = traffic_light_group_array_msg.header;
+  traffic_light_group.traffic_light_group_id = 0;  // 根据实际情况设置
 
   // 处理检测结果
   float score_threshold = 0.5;
-  for (int i = 0; i < scores.total(); ++i) {
-    float score = scores.at<float>(i);
-    if (score > score_threshold) {
-      int label = static_cast<int>(labels.at<float>(i));
-      cv::Rect box;
-      box.x = static_cast<int>(boxes.at<float>(i, 0));
-      box.y = static_cast<int>(boxes.at<float>(i, 1));
-      box.width = static_cast<int>(boxes.at<float>(i, 2)) - box.x;
-      box.height = static_cast<int>(boxes.at<float>(i, 3)) - box.y;
 
-      // 限制在图像范围内
+  // 假设检测模型的输出为 [num_detections, 7]，每一行格式为 [batch_id, class_id, score, x1, y1, x2, y2]
+  cv::Mat detections = detection_outputs[0];
+  for (int i = 0; i < detections.rows; ++i) {
+    float score = detections.at<float>(i, 2);
+    if (score > score_threshold) {
+      int class_id = static_cast<int>(detections.at<float>(i, 1));
+      int x1 = static_cast<int>(detections.at<float>(i, 3) * cv_image.cols);
+      int y1 = static_cast<int>(detections.at<float>(i, 4) * cv_image.rows);
+      int x2 = static_cast<int>(detections.at<float>(i, 5) * cv_image.cols);
+      int y2 = static_cast<int>(detections.at<float>(i, 6) * cv_image.rows);
+
+      cv::Rect box(x1, y1, x2 - x1, y2 - y1);
       box &= cv::Rect(0, 0, cv_image.cols, cv_image.rows);
 
       detected_boxes.push_back(box);
@@ -131,62 +129,43 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
 
       total_processed_images_++;
 
-      // 构建 TrafficLightState
-      autoware_perception_msgs::msg::TrafficLightState traffic_light_state;
-      traffic_light_state.id = static_cast<int32_t>(i);  // 根据实际情况设置唯一标识符
+      // 构建 TrafficLightElement
+      autoware_perception_msgs::msg::TrafficLightElement traffic_light_element;
 
       // 设置颜色
       if (predicted_label == "stop" || predicted_label == "stopLeft") {
-        traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::RED;
+        traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::RED;
       } else if (predicted_label == "warning" || predicted_label == "warningLeft") {
-        traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::AMBER;
+        traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::AMBER;
       } else if (predicted_label == "go" || predicted_label == "goLeft") {
-        traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::GREEN;
+        traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::GREEN;
       } else {
-        traffic_light_state.color = autoware_perception_msgs::msg::TrafficLightState::UNKNOWN;
+        traffic_light_element.color = autoware_perception_msgs::msg::TrafficLightElement::UNKNOWN;
       }
 
       // 设置形状
       if (predicted_label.find("Left") != std::string::npos) {
-        traffic_light_state.shape = autoware_perception_msgs::msg::TrafficLightState::LEFT_ARROW;
+        traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::LEFT_ARROW;
       } else {
-        traffic_light_state.shape = autoware_perception_msgs::msg::TrafficLightState::CIRCLE;
+        traffic_light_element.shape = autoware_perception_msgs::msg::TrafficLightElement::CIRCLE;
       }
+
+      // 设置状态，假设为 SOLID_ON
+      traffic_light_element.status = autoware_perception_msgs::msg::TrafficLightElement::SOLID_ON;
 
       // 设置置信度
-      traffic_light_state.confidence = confidence;
+      traffic_light_element.confidence = static_cast<float>(confidence);
 
-      // 将 TrafficLightState 添加到 TrafficLightGroup 中
-      traffic_light_group.lights.push_back(traffic_light_state);
+      // 将 TrafficLightElement 添加到 TrafficLightGroup 中
+      traffic_light_group.elements.push_back(traffic_light_element);
 
-      // 计算交通信号灯的位置（假设已知深度或距离）
-      // 此处需要实际的相机参数和深度信息才能准确计算世界坐标
-      // 为了示例，我们假设交通信号灯在距离相机 10 米的地方
-      double depth = 10.0;  // 假设深度为10米
-
-      // 获取边界框中心点
-      double u = box.x + box.width / 2.0;
-      double v = box.y + box.height / 2.0;
-
-      // 反投影到相机坐标系
-      cv::Mat uv_point = (cv::Mat_<double>(3,1) << u, v, 1.0);
-      cv::Mat cam_point = camera_intrinsic_matrix_.inv() * uv_point * depth;
-
-      // 转换为世界坐标系（假设相机坐标系与世界坐标系对齐）
-      geometry_msgs::msg::Point position;
-      position.x = cam_point.at<double>(0, 0);
-      position.y = cam_point.at<double>(1, 0);
-      position.z = cam_point.at<double>(2, 0);
-
-      // 设置 TrafficLightGroup 的位置为检测到的第一个交通信号灯的位置
-      if (i == 0) {
-        traffic_light_group.position = position;
-      }
+      // 交通信号灯组的 ID 可以根据实际需求设置
+      traffic_light_group.traffic_light_group_id = 0;  // 示例中设为0
     }
   }
 
   // 将 TrafficLightGroup 添加到 TrafficLightGroupArray 中
-  traffic_light_group_array_msg.groups.push_back(traffic_light_group);
+  traffic_light_group_array_msg.traffic_light_groups.push_back(traffic_light_group);
 
   traffic_signals_publisher_->publish(traffic_light_group_array_msg);
 
