@@ -20,14 +20,11 @@ CamNode::CamNode(const rclcpp::NodeOptions & options)
   this->declare_parameter("annotations_dir", "/home/casia/jupyter_notebooks/Annotations/Annotations/dayTrain");
   this->declare_parameter("data_dir", "/home/casia/jupyter_notebooks/dayTrain/dayTrain");
   this->declare_parameter("debug_mode", false);
-
   // 新增参数
   this->declare_parameter("publish_cropped_images", false);
 
   annotations_dir_ = this->get_parameter("annotations_dir").as_string();
   data_dir_ = this->get_parameter("data_dir").as_string();
-  
-  // 获取参数值
   publish_cropped_images_ = this->get_parameter("publish_cropped_images").as_bool();
 
   RCLCPP_INFO(this->get_logger(), "Annotations directory: %s", annotations_dir_.c_str());
@@ -81,9 +78,129 @@ void CamNode::timerCallback()
   }
 }
 
-// 其余代码保持不变
+void CamNode::loadDataset()
+{
+  namespace fs = std::filesystem;
+  
+  RCLCPP_INFO(this->get_logger(), "Starting to load dataset...");
+
+  for (const auto & entry : fs::recursive_directory_iterator(annotations_dir_)) {
+    if (fs::is_directory(entry)) {
+      std::string csv_path = entry.path().string() + "/frameAnnotationsBOX.csv";
+      if (fs::exists(csv_path)) {
+        std::ifstream file(csv_path);
+        std::string line;
+        
+        // 读取表头并解析列名
+        std::getline(file, line);
+        std::istringstream header_stream(line);
+        std::string header_token;
+        std::vector<std::string> header_tokens;
+        while (std::getline(header_stream, header_token, ';')) {
+          header_tokens.push_back(header_token);
+        }
+
+        while (std::getline(file, line)) {
+          std::istringstream iss(line);
+          std::string token;
+          std::vector<std::string> tokens;
+          
+          while (std::getline(iss, token, ';')) {
+            tokens.push_back(token);
+          }
+          
+          if (tokens.size() < 7) {
+            RCLCPP_WARN(this->get_logger(), "Invalid line (less than 7 tokens): %s", line.c_str());
+            continue; // 跳过这行
+          }
+          
+          try {
+            // 正确的索引映射
+            std::string filename = tokens[0]; // 'Filename' column
+            std::string annotation_tag = tokens[1]; // 'Annotation tag' column
+            int ulx = std::stoi(tokens[2]); // 'Upper left corner X'
+            int uly = std::stoi(tokens[3]); // 'Upper left corner Y'
+            int lrx = std::stoi(tokens[4]); // 'Lower right corner X'
+            int lry = std::stoi(tokens[5]); // 'Lower right corner Y'
+            std::string origin_file = tokens[6]; // 'Origin file' column
+
+            // 获取图像名称和剪辑名称
+            std::string img_name = fs::path(filename).filename().string();
+            std::string clip_name = fs::path(origin_file).parent_path().filename().string();
+
+            std::string img_path = data_dir_ + "/" + clip_name + "/frames/" + img_name;
+
+            if (fs::exists(img_path)) {
+              Annotation ann;
+              ann.img_path = img_path;
+              ann.label = annotation_tag;
+              ann.bbox = { ulx, uly, lrx, lry };
+              annotations_.push_back(ann);
+              if (class_to_idx_.find(ann.label) == class_to_idx_.end()) {
+                class_to_idx_[ann.label] = class_to_idx_.size();
+              }
+            } else {
+              RCLCPP_WARN(this->get_logger(), "Image file does not exist: %s", img_path.c_str());
+            }
+          } catch (const std::invalid_argument& e) {
+            RCLCPP_ERROR(this->get_logger(), "Invalid integer in line: %s", line.c_str());
+            continue; // 跳过这行
+          } catch (const std::out_of_range& e) {
+            RCLCPP_ERROR(this->get_logger(), "Integer out of range in line: %s", line.c_str());
+            continue; // 跳过这行
+          }
+        }
+      }
+    }
+  }
+  
+  if (!annotations_.empty()) {
+    dis_ = std::uniform_int_distribution<>(0, annotations_.size() - 1);
+  } else {
+    RCLCPP_ERROR(this->get_logger(), "No annotations loaded!");
+  }
+}
+
+cv::Mat CamNode::cropImage(const cv::Mat& image, const std::vector<int>& bbox)
+{
+  int x1 = bbox[0], y1 = bbox[1], x2 = bbox[2], y2 = bbox[3];
+  int h = y2 - y1, w = x2 - x1;
+  int center_x = (x1 + x2) / 2, center_y = (y1 + y2) / 2;
+
+  double expand_ratio = 1.5;
+  int new_h = static_cast<int>(h * expand_ratio);
+  int new_w = static_cast<int>(w * expand_ratio);
+  int new_x1 = std::max(0, center_x - new_w / 2);
+  int new_y1 = std::max(0, center_y - new_h / 2);
+  int new_x2 = std::min(image.cols, center_x + new_w / 2);
+  int new_y2 = std::min(image.rows, center_y + new_h / 2);
+
+  return image(cv::Rect(new_x1, new_y1, new_x2 - new_x1, new_y2 - new_y1));
+}
+
+std::string CamNode::getClassesString() const
+{
+  std::string result = "[";
+  for (const auto& pair : class_to_idx_) {
+    result += pair.first + ", ";
+  }
+  if (!class_to_idx_.empty()) {
+    result.pop_back();
+    result.pop_back();
+  }
+  result += "]";
+  return result;
+}
 
 }  // namespace traffic_light_classifier
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(traffic_light_classifier::CamNode)
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<traffic_light_classifier::CamNode>());
+  rclcpp::shutdown();
+  return 0;
+}
