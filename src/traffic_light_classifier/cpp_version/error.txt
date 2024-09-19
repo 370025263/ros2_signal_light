@@ -1,29 +1,18 @@
-casia@casia-Precision-3650-Tower:~/app/autoware_source_code/autoware.universe$ ros2 interface show autoware_perception_msgs/msg/TrafficLightGroupArray
-builtin_interfaces/Time stamp
-        int32 sec
-        uint32 nanosec
-autoware_perception_msgs/TrafficLightGroup[] traffic_light_groups
-        int64 traffic_light_group_id
-        autoware_perception_msgs/TrafficLightElement[] elements
-                uint8 UNKNOWN = 0
-                uint8 RED = 1
-                uint8 AMBER = 2
-                uint8 GREEN = 3
-                uint8 WHITE = 4
-                uint8 CIRCLE = 1
-                uint8 LEFT_ARROW = 2
-                uint8 RIGHT_ARROW = 3
-                uint8 UP_ARROW = 4
-                uint8 UP_LEFT_ARROW=5
-                uint8 UP_RIGHT_ARROW=6
-                uint8 DOWN_ARROW = 7
-                uint8 DOWN_LEFT_ARROW = 8
-                uint8 DOWN_RIGHT_ARROW = 9
-                uint8 CROSS = 10
-                uint8 SOLID_OFF = 1
-                uint8 SOLID_ON = 2
-                uint8 FLASHING = 3
-                uint8 color
-                uint8 shape
-                uint8 status
-                float32 confidence
+casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ colcon build --packages-select traffic_light_classifier&&ros2 run traffic_light_classifier cam_node
+Starting >>> traffic_light_classifier
+--- stderr: traffic_light_classifier                             
+In file included from /home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/src/classification_node.cpp:1:
+/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/include/traffic_light_classifier/classification_node.hpp:9:10: fatal error: autoware_perception_msgs/msg/TrafficLightGroupArray.hpp: No such file or directory
+    9 | #include <autoware_perception_msgs/msg/TrafficLightGroupArray.hpp>
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
+gmake[2]: *** [CMakeFiles/classification_node.dir/build.make:76: CMakeFiles/classification_node.dir/src/classification_node.cpp.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:165: CMakeFiles/classification_node.dir/all] Error 2
+gmake: *** [Makefile:146: all] Error 2
+---
+Failed   <<< traffic_light_classifier [0.42s, exited with code 2]
+
+Summary: 0 packages finished [0.62s]
+  1 package failed: traffic_light_classifier
+  1 package had stderr output: traffic_light_classifier
+
