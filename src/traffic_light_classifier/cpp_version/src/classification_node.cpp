@@ -41,7 +41,7 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
   // Initialize model paths and other member variables
   std::string package_share_dir = ament_index_cpp::get_package_share_directory("traffic_light_classifier");
   std::string detection_model_path = package_share_dir + "/models/fasterrcnn_resnet50_fpn.onnx";
-  std::string classification_model_path = package_share_dir + "/models/best_model.onnx";
+  std::string classification_model_path = package_share_dir + "/models/traffic_light_classifier.onnx";
 
   // Set session options (optional)
   session_options_.SetIntraOpNumThreads(1);

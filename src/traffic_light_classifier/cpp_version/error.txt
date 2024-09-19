@@ -1,4 +1,5 @@
-casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ ros2 run traffic_light_classifier classification_node 
-/home/casia/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/install/traffic_light_classifier/lib/traffic_light_classifier/classification_node: error while loading shared libraries: libonnxruntime.so.1: cannot open shared object file: No such file or directory
-[ros2run]: Process exited with failure 127
+casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version$ source install/setup.bash&&ros2 run traffic_light_classifier classification_node 
+terminate called after throwing an instance of 'Ort::Exception'
+  what():  not enough space: expected 7680000, got 2560000
+[ros2run]: Aborted
 
