@@ -5,13 +5,14 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <cv_bridge/cv_bridge.h>
 
+
 #include <onnxruntime_cxx_api.h>
 
 namespace traffic_light_classifier
 {
 
-ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
-: Node("classification_node", options),
+ClassificationNode::ClassificationNode(const rclcpp::NodeOptions &options)
+: rclcpp::Node("classification_node", options),
   env_(ORT_LOGGING_LEVEL_WARNING, "TrafficLightClassifier"),
   detection_session_(nullptr),
   classification_session_(nullptr),
@@ -40,7 +41,7 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
   // Initialize model paths and other member variables
   std::string package_share_dir = ament_index_cpp::get_package_share_directory("traffic_light_classifier");
   std::string detection_model_path = package_share_dir + "/models/fasterrcnn_resnet50_fpn.onnx";
-  std::string classification_model_path = package_share_dir + "/models/best_model.onnx";
+  std::string classification_model_path = package_share_dir + "/models/traffic_light_classifier.onnx";
 
   // Set session options (optional)
   session_options_.SetIntraOpNumThreads(1);
@@ -62,35 +63,59 @@ ClassificationNode::ClassificationNode(const rclcpp::NodeOptions & options)
 
   // Initialize camera intrinsic matrix here if needed
 }
+cv::Mat HWC2CHW(const cv::Mat& image) {
+    std::vector<cv::Mat> channels(3);
+    cv::split(image, channels);
 
+    // 创建一个大的单通道图像来存储所有通道
+    cv::Mat result(image.rows * 3, image.cols, CV_32F);
+
+    for (int i = 0; i < 3; ++i) {
+        channels[i].copyTo(result(cv::Rect(0, image.rows * i, image.cols, image.rows)));
+    }
+
+    return result;
+}
 void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string& true_label)
 {
   (void)true_label; // Suppress unused parameter warning
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
+  // print image size
+  RCLCPP_INFO(this->get_logger(), "Image size: %dx%d", cv_image.cols, cv_image.rows);
+
   // Preprocess image for detection
   cv::Mat resized_image;
-  cv::resize(cv_image, resized_image, cv::Size(800, 800));
+  cv::resize(cv_image, resized_image, cv::Size(224, 224));
+
+  // size after resize
+    RCLCPP_INFO(this->get_logger(), "Resized image size: %dx%d", resized_image.cols, resized_image.rows);
   cv::Mat rgb_image;
   cv::cvtColor(resized_image, rgb_image, cv::COLOR_BGR2RGB);
-  rgb_image.convertTo(rgb_image, CV_32F, 1.0 / 255);
+  rgb_image.convertTo(rgb_image, CV_32F, 1.0 / 255); // Normalize to [0, 1]
 
-  // Create input tensor dimensions
-  std::vector<int64_t> input_dims = {1, rgb_image.channels(), rgb_image.rows, rgb_image.cols};
+// 执行HWC到CHW的转换
+cv::Mat chw_image = HWC2CHW(rgb_image);
+
+std::vector<int64_t> input_dims = {1, 3, static_cast<int64_t>(rgb_image.rows), static_cast<int64_t>(rgb_image.cols)};
+
+size_t input_tensor_size = chw_image.total();
+std::vector<float> input_tensor_values(input_tensor_size);
 
   // Flatten the image data and copy to input tensor
-  size_t input_tensor_size = rgb_image.rows * rgb_image.cols * rgb_image.channels();
-  std::vector<float> input_tensor_values(input_tensor_size);
 
+  // Copy image data to input tensor
   if (rgb_image.isContinuous()) {
-      std::memcpy(input_tensor_values.data(), rgb_image.data, input_tensor_size * sizeof(float));
+    // Copy all at once
+      std::memcpy(input_tensor_values.data(), chw_image.data, input_tensor_size * sizeof(float));
   } else {
+    // Copy row by row
       size_t idx = 0;
-      for (int i = 0; i < rgb_image.rows; ++i) {
-          const float* row_ptr = rgb_image.ptr<float>(i);
-          std::memcpy(input_tensor_values.data() + idx, row_ptr, rgb_image.cols * rgb_image.channels() * sizeof(float));
-          idx += rgb_image.cols * rgb_image.channels();
+      for (int i = 0; i < chw_image.rows; ++i) {
+          const float* row_ptr = chw_image.ptr<float>(i);
+          std::memcpy(input_tensor_values.data() + idx, row_ptr, chw_image.cols * chw_image.channels() * sizeof(float));
+          idx += chw_image.cols * chw_image.channels();
       }
   }
 
@@ -104,9 +129,8 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
       input_dims.size());
 
   // Run detection model
-  Ort::AllocatorWithDefaultOptions allocator;
-
   // Get input and output names
+  Ort::AllocatorWithDefaultOptions allocator;
   Ort::AllocatedStringPtr input_name_ptr = detection_session_->GetInputNameAllocated(0, allocator);
   std::vector<const char*> input_names = {input_name_ptr.get()};
 
@@ -118,17 +142,61 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
     output_name_ptrs.push_back(detection_session_->GetOutputNameAllocated(i, allocator));
     output_names.push_back(output_name_ptrs.back().get());
   }
+// Print input shape
+Ort::TypeInfo type_info = detection_session_->GetInputTypeInfo(0);
+auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+std::vector<int64_t> input_shape = tensor_info.GetShape();
+RCLCPP_INFO(this->get_logger(), "DETECTION MODEL, Input shape: %ld %ld %ld %ld", input_shape[0], input_shape[1], input_shape[2], input_shape[3]);
+	// Ensure input shape is as expected
+if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || input_shape[3] != 224) {
+  RCLCPP_ERROR(this->get_logger(), "Unexpected input shape");
+  return;
+}
 
   auto output_tensors = detection_session_->Run(Ort::RunOptions{nullptr}, input_names.data(), &input_tensor, 1, output_names.data(), output_names.size());
+  // output shape print, boxes, scores, labels
+  /**
+* 边界框：形状通常为 [1, 100, 4]
+1 表示批次
+100 表示每张图像最多检测100个对象
+4 表示每个边界框的坐标 (x1, y1, x2, y2)
+标签：形状通常为 [1, 100]
+每个检测对象的类别标签
+分数：形状通常为 [1, 100]
+每个检测对象的置信度分数
+*/
+   // print model out shape range of boxes, labels, scores
+    // boxes 边界框：形状通常为 [1, 100, 4]
+    Ort::Value boxes_tensor =  std::move(output_tensors[0]);
+    Ort::TensorTypeAndShapeInfo boxes_info= boxes_tensor.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> boxes_shape = boxes_info.GetShape();
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of boxes: %ld %ld %ld", boxes_shape[0], boxes_shape[1], boxes_shape[2]);
+    int detection_num = boxes_shape[0];
+    RCLCPP_INFO(this->get_logger(), "DETECT NUM: %d", detection_num);
+
+    // labels 标签：形状通常为 [1, 100]
+    Ort::Value labels_tensor =  std::move(output_tensors[1]);
+    Ort::TensorTypeAndShapeInfo labels_info= labels_tensor.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> labels_shape = labels_info.GetShape();
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of labels: %ld %ld", labels_shape[0], labels_shape[1]);
+
+    // scores 分数：形状通常为 [1, 100]
+    Ort::Value scores_tensor =  std::move(output_tensors[2]);
+    Ort::TensorTypeAndShapeInfo scores_info= scores_tensor.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> scores_shape = scores_info.GetShape();
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of scores: %ld %ld", scores_shape[0], scores_shape[1]);
 
   // Extract outputs
   float* boxes_data = output_tensors[0].GetTensorMutableData<float>();
   int64_t* labels_data = output_tensors[1].GetTensorMutableData<int64_t>();
   float* scores_data = output_tensors[2].GetTensorMutableData<float>();
 
-  std::vector<int64_t> boxes_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-  std::vector<int64_t> labels_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
-  std::vector<int64_t> scores_shape = output_tensors[2].GetTensorTypeAndShapeInfo().GetShape();
+
+
+  if (boxes_shape.size() < 2 || boxes_shape[0] == 0 || boxes_shape[1] == 0) {
+  RCLCPP_ERROR(this->get_logger(), "No detections found");
+  return;
+    }
 
   // Convert raw pointers to vectors
   size_t num_boxes = boxes_shape[1];
@@ -212,7 +280,20 @@ void ClassificationNode::processImage(const cv::Mat& cv_image, const std::string
       Ort::AllocatedStringPtr class_output_name_ptr = classification_session_->GetOutputNameAllocated(0, allocator);
       std::vector<const char*> class_output_names = {class_output_name_ptr.get()};
 
+      // log the model input shape
+      Ort::TypeInfo class_type_info = classification_session_->GetInputTypeInfo(0);
+        auto class_tensor_info = class_type_info.GetTensorTypeAndShapeInfo();
+        std::vector<int64_t> class_input_shape = class_tensor_info.GetShape();
+        RCLCPP_INFO(this->get_logger(), "classification MODEL , Class input shape: %ld %ld %ld %ld", class_input_shape[0], class_input_shape[1], class_input_shape[2], class_input_shape[3]);
+
       auto class_output_tensors = classification_session_->Run(Ort::RunOptions{nullptr}, class_input_names.data(), &class_input_tensor, 1, class_output_names.data(), class_output_names.size());
+		// print the output shape of classification model  from its out tensor
+        // like class_output_tensors.shape?
+        Ort::TypeInfo class_type_info_out = classification_session_->GetOutputTypeInfo(0);
+        auto class_tensor_info_out = class_type_info_out.GetTensorTypeAndShapeInfo();
+        std::vector<int64_t> class_output_shape = class_tensor_info_out.GetShape();
+        RCLCPP_INFO(this->get_logger(), "classification MODEL , Class output shape: %ld %ld", class_output_shape[0], class_output_shape[1]);
+
 
       // Extract classification results
       float* class_scores = class_output_tensors[0].GetTensorMutableData<float>();

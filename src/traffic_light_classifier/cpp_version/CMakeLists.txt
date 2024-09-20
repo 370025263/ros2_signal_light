@@ -40,10 +40,12 @@ include_directories(
   ${rclcpp_INCLUDE_DIRS}
   ${rclcpp_components_INCLUDE_DIRS}
   ${ONNXRUNTIME_INCLUDE_DIRS}
+  ${autoware_perception_msgs_INCLUDE_DIRS}
 )
 
 # 添加可执行文件
-add_executable(cam_node src/cam_node.cpp)
+add_executable(cam_node src/cam_node.cpp
+        )
 ament_target_dependencies(cam_node
   rclcpp
   sensor_msgs
@@ -72,6 +74,7 @@ target_link_libraries(classification_node
   ${rclcpp_LIBRARIES} 
   ${rclcpp_components_LIBRARIES}
   ${ONNXRUNTIME_LIBRARY}
+  ${autoware_perception_msgs_LIBRARIES}  # 添加这一行
 )
 
 # 安装
@@ -101,6 +104,7 @@ ament_export_dependencies(
   OpenCV 
   traffic_light_msg 
   autoware_perception_msgs
+        
 )
 
 ament_package()
