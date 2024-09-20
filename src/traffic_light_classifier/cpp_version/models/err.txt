@@ -1,0 +1,7 @@
+casia@casia-Precision-3650-Tower:~/jupyter_notebooks/ros_ws/src/traffic_light_classifier/cpp_version/models$ g++ -std=c++14 faster_rcnn_inference.cpp -o faster_rcnn_inference     -I/home/casia/Downloads/onnxruntime-linux-x64-gpu-1.19.2/include     -L/home/casia/Downloads/onnxruntime-linux-x64-gpu-1.19.2/lib     -lonnxruntime     -I/usr/include/opencv4     -lopencv_core -lopencv_imgproc -lopencv_imgcodecs     -Wl,-rpath,/home/casia/Downloads/onnxruntime-linux-x64-gpu-1.19.2/lib && ./faster_rcnn_inference 
+Output 0 shape: 0 4 
+Output 1 shape: 0 
+Output 2 shape: 0 
+Number of detections: 4
+Scores array is null
+
