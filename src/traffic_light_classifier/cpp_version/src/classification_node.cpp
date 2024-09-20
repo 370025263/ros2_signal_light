@@ -170,7 +170,7 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
     Ort::Value boxes_tensor =  std::move(output_tensors[0]);
     Ort::TensorTypeAndShapeInfo boxes_info= boxes_tensor.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> boxes_shape = boxes_info.GetShape();
-    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of boxes: %ld %ld %ld", boxes_shape[0], boxes_shape[1], boxes_shape[2]);
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of boxes: NUM is %ld, boxDim is%ld", boxes_shape[0], boxes_shape[1]);
     int detection_num = boxes_shape[0];
     RCLCPP_INFO(this->get_logger(), "DETECT NUM: %d", detection_num);
 
@@ -178,29 +178,30 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
     Ort::Value labels_tensor =  std::move(output_tensors[1]);
     Ort::TensorTypeAndShapeInfo labels_info= labels_tensor.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> labels_shape = labels_info.GetShape();
-    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of labels: %ld %ld", labels_shape[0], labels_shape[1]);
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of labels: (%ld,)", labels_shape[0]);
 
     // scores 分数：形状通常为 [1, 100]
     Ort::Value scores_tensor =  std::move(output_tensors[2]);
     Ort::TensorTypeAndShapeInfo scores_info= scores_tensor.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> scores_shape = scores_info.GetShape();
-    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of scores: %ld %ld", scores_shape[0], scores_shape[1]);
+    RCLCPP_INFO(this->get_logger(), "DETECTION MODEL Output shape of scores: (%ld,)", scores_shape[0]);
 
   // Extract outputs
-  float* boxes_data = output_tensors[0].GetTensorMutableData<float>();
-  int64_t* labels_data = output_tensors[1].GetTensorMutableData<int64_t>();
-  float* scores_data = output_tensors[2].GetTensorMutableData<float>();
+  float* boxes_data = boxes_tensor.GetTensorMutableData<float>();
+  int64_t* labels_data = labels_tensor.GetTensorMutableData<int64_t>();
+  float* scores_data = scores_tensor.GetTensorMutableData<float>();
 
 
 
-  if (boxes_shape.size() < 2 || boxes_shape[0] == 0 || boxes_shape[1] == 0) {
+  if (boxes_shape.size() < 2 || boxes_shape[0] == 0) {
   RCLCPP_ERROR(this->get_logger(), "No detections found");
   return;
     }
 
+
   // Convert raw pointers to vectors
-  size_t num_boxes = boxes_shape[1];
-  size_t num_detections = scores_shape[1];
+  size_t num_boxes = boxes_shape[0];
+  size_t num_detections = scores_shape[0];
 
   std::vector<float> boxes(boxes_data, boxes_data + num_boxes * 4);
   std::vector<int64_t> labels(labels_data, labels_data + num_detections);
@@ -218,24 +219,39 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
   traffic_light_group.traffic_light_group_id = 0;  // Modify as needed
 
   float score_threshold = 0.5;
+  int traffic_light_class_id = 10;  // COCO数据集中交通灯的类别ID
+  // 获取原始图像的尺寸
+  int original_width = cv_image.cols;
+  int original_height = cv_image.rows;
+  // 计算缩放因子
+  float scale_x = static_cast<float>(original_width) / 224.0f;
+  float scale_y = static_cast<float>(original_height) / 224.0f;
 
   for (size_t i = 0; i < num_detections; ++i) {
     float score = scores[i];
-    if (score > score_threshold) {
-      // int label = static_cast<int>(labels[i]);
-      float x1 = boxes[i * 4];
-      float y1 = boxes[i * 4 + 1];
-      float x2 = boxes[i * 4 + 2];
-      float y2 = boxes[i * 4 + 3];
+    int label = static_cast<int>(labels[i]);
+    if (score > score_threshold && label == traffic_light_class_id) {
 
-      // Scale bounding box back to original image size
-      x1 *= static_cast<float>(cv_image.cols) / 800.0f;
-      y1 *= static_cast<float>(cv_image.rows) / 800.0f;
-      x2 *= static_cast<float>(cv_image.cols) / 800.0f;
-      y2 *= static_cast<float>(cv_image.rows) / 800.0f;
+      // 首先将坐标除以224（模型输入大小），然后缩放到原始图像大小
+      float x1 = (boxes[i * 4] / 224.0f) * original_width;
+      float y1 = (boxes[i * 4 + 1] / 224.0f) * original_height;
+      float x2 = (boxes[i * 4 + 2] / 224.0f) * original_width;
+      float y2 = (boxes[i * 4 + 3] / 224.0f) * original_height;
 
-      cv::Rect box(cv::Point(static_cast<int>(x1), static_cast<int>(y1)), cv::Point(static_cast<int>(x2), static_cast<int>(y2)));
-      box &= cv::Rect(0, 0, cv_image.cols, cv_image.rows);
+      // 确保坐标在图像范围内
+      x1 = std::max(0.0f, std::min(x1, static_cast<float>(original_width - 1)));
+      y1 = std::max(0.0f, std::min(y1, static_cast<float>(original_height - 1)));
+      x2 = std::max(0.0f, std::min(x2, static_cast<float>(original_width - 1)));
+      y2 = std::max(0.0f, std::min(y2, static_cast<float>(original_height - 1)));
+
+
+
+      // 打印缩放后的坐标以进行调试
+      RCLCPP_INFO(this->get_logger(), "Scaled coordinates: x1=%.2f, y1=%.2f, x2=%.2f, y2=%.2f", x1, y1, x2, y2);
+
+
+      cv::Rect box(cv::Point(static_cast<int>(x1), static_cast<int>(y1)),
+                   cv::Point(static_cast<int>(x2), static_cast<int>(y2)));
 
       detected_boxes.push_back(box);
       detected_scores.push_back(score);
@@ -375,13 +391,17 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
   RCLCPP_INFO(this->get_logger(), "Total processed images: %d", total_processed_images_);
 }
 
-cv::Mat ClassificationNode::drawResult(const cv::Mat& image, const std::vector<cv::Rect>& boxes, const std::vector<std::string>& labels)
+  cv::Mat ClassificationNode::drawResult(const cv::Mat& image, const std::vector<cv::Rect>& boxes, const std::vector<std::string>& labels)
 {
   cv::Mat result_image = image.clone();
 
   for (size_t i = 0; i < boxes.size(); ++i) {
+    // 边界框已经是原始图像大小，不需要再次缩放
     cv::rectangle(result_image, boxes[i], cv::Scalar(0, 255, 0), 2);
-    cv::putText(result_image, labels[i], cv::Point(boxes[i].x, boxes[i].y - 10),
+
+    // 确保文本位置在图像内
+    int text_y = std::max(boxes[i].y - 10, 0);
+    cv::putText(result_image, labels[i], cv::Point(boxes[i].x, text_y),
                 cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 255, 0), 2);
   }
 

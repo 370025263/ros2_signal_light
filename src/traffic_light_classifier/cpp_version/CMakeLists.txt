@@ -3,6 +3,9 @@ project(traffic_light_classifier)
 
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)
+# IDE
+set(CMAKE_BUILD_TYPE "Debug")
+
 
 # 编译选项
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
