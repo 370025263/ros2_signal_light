@@ -92,7 +92,7 @@ install(DIRECTORY include/${PROJECT_NAME}
 )
 
 install(DIRECTORY
-  launch
+  #launch
   models
   DESTINATION share/${PROJECT_NAME}
 )

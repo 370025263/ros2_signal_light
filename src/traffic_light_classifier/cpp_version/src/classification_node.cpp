@@ -218,7 +218,7 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
   autoware_perception_msgs::msg::TrafficLightGroup traffic_light_group;
   traffic_light_group.traffic_light_group_id = 0;  // Modify as needed
 
-  float score_threshold = 0.5;
+  float score_threshold = 0.95;
   int traffic_light_class_id = 10;  // COCO数据集中交通灯的类别ID
   // 获取原始图像的尺寸
   int original_width = cv_image.cols;
@@ -264,21 +264,22 @@ if (input_shape.size() != 4 || input_shape[1] != 3 || input_shape[2] != 224 || i
       cv::resize(cropped_img, class_resized_img, cv::Size(224, 224));
       cv::cvtColor(class_resized_img, class_resized_img, cv::COLOR_BGR2RGB);
       class_resized_img.convertTo(class_resized_img, CV_32F, 1.0 / 255);
+      cv::Mat chw_img = HWC2CHW(class_resized_img);
 
-      // Create input tensor for classification
-      std::vector<int64_t> class_input_dims = {1, class_resized_img.channels(), class_resized_img.rows, class_resized_img.cols};
+      // Create input tensor for classificationclass_resized
+      std::vector<int64_t> class_input_dims = {1, 3, 224, 224};
       
-      size_t class_input_tensor_size = class_resized_img.rows * class_resized_img.cols * class_resized_img.channels();
+      size_t class_input_tensor_size = chw_image.total();
       std::vector<float> class_input_tensor_values(class_input_tensor_size);
 
-      if (class_resized_img.isContinuous()) {
-          std::memcpy(class_input_tensor_values.data(), class_resized_img.data, class_input_tensor_size * sizeof(float));
+      if (chw_img.isContinuous()) {
+          std::memcpy(class_input_tensor_values.data(), chw_img.data, class_input_tensor_size * sizeof(float));
       } else {
           size_t idx = 0;
-          for (int i = 0; i < class_resized_img.rows; ++i) {
-              const float* row_ptr = class_resized_img.ptr<float>(i);
-              std::memcpy(class_input_tensor_values.data() + idx, row_ptr, class_resized_img.cols * class_resized_img.channels() * sizeof(float));
-              idx += class_resized_img.cols * class_resized_img.channels();
+          for (int i = 0; i < chw_img.rows; ++i) {
+              const float* row_ptr = chw_img.ptr<float>(i);
+              std::memcpy(class_input_tensor_values.data() + idx, row_ptr, chw_img.cols * chw_img.channels() * sizeof(float));
+              idx += chw_img.cols;
           }
       }
 
